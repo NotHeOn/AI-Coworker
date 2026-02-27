@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Coworker — Settings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f11;
+      --surface: #1a1a1f;
+      --surface2: #252530;
+      --border: #2e2e3a;
+      --accent: #7c6aff;
+      --text: #e8e8f0;
+      --text-muted: #8888a0;
+      --error: #f87171;
+      --success: #4ade80;
+      --radius: 12px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      min-height: 100vh;
+      padding: 32px 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .header img { width: 28px; height: 28px; border-radius: 6px; }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    /* ── Two-panel layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 600px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel headings ── */
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    /* ── Profile list ── */
+    .profile-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .profile-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 0.15s;
+    }
+
+    .profile-card.active {
+      border-color: var(--accent);
+    }
+
+    .profile-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .profile-name {
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .active-badge {
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(124, 106, 255, 0.18);
+      color: var(--accent);
+      border: 1px solid rgba(124, 106, 255, 0.35);
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+
+    .profile-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .profile-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font);
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .btn-sm:hover { background: var(--border); color: var(--text); }
+
+    .btn-sm.activate {
+      border-color: rgba(124, 106, 255, 0.4);
+      color: var(--accent);
+    }
+
+    .btn-sm.activate:hover {
+      background: rgba(124, 106, 255, 0.15);
+      border-color: var(--accent);
+    }
+
+    .btn-sm.danger:hover {
+      background: rgba(248, 113, 113, 0.15);
+      border-color: rgba(248, 113, 113, 0.4);
+      color: var(--error);
+    }
+
+    .empty-state {
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    /* ── Form panel ── */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .form-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-row input { flex: 1; }
+
+    .toggle-visibility {
+      padding: 9px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--font);
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    .toggle-visibility:hover { background: var(--border); }
+
+    /* Preset buttons */
+    .presets {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .preset-btn {
+      padding: 5px 11px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .preset-btn:hover {
+      background: rgba(124, 106, 255, 0.12);
+      border-color: rgba(124, 106, 255, 0.4);
+      color: var(--accent);
+    }
+
+    .btn-primary {
+      width: 100%;
+      padding: 10px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover { background: #6b58ee; }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 9px;
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.15s;
+    }
+
+    .btn-secondary:hover { background: var(--surface2); color: var(--text); }
+
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    .status.success { color: var(--success); }
+    .status.error { color: var(--error); }
+
+    .helper {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 5px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="icons/icon48.png" alt="logo" />
+      <h1>AI Coworker — Settings</h1>
+    </div>
+
+    <div class="layout">
+      <!-- Left: Profiles list -->
+      <div>
+        <div class="panel-title">Saved Profiles</div>
+        <div class="profile-list" id="profileList">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Right: Add/Edit form -->
+      <div>
+        <div class="panel-title" id="formPanelTitle">Add Profile</div>
+        <div class="form-card">
+          <div class="presets">
+            <button class="preset-btn" data-preset="claude">Claude</button>
+            <button class="preset-btn" data-preset="openai">OpenAI</button>
+            <button class="preset-btn" data-preset="ollama">Ollama (local)</button>
+          </div>
+
+          <div class="field">
+            <label for="profileName">Profile Name</label>
+            <input type="text" id="profileName" placeholder="e.g. Claude Opus" />
+          </div>
+
+          <div class="field">
+            <label for="baseUrl">Base URL</label>
+            <input type="url" id="baseUrl" placeholder="https://api.anthropic.com/v1" />
+            <p class="helper">The API base URL (without trailing slash).</p>
+          </div>
+
+          <div class="field">
+            <label for="modelName">Model Name</label>
+            <input type="text" id="modelName" placeholder="e.g. claude-opus-4-6" />
+          </div>
+
+          <div class="field">
+            <label for="apiKey">API Key</label>
+            <div class="input-row">
+              <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" />
+              <button class="toggle-visibility" id="toggleVisibility">Show</button>
+            </div>
+            <p class="helper">Leave blank for local models that don't require authentication.</p>
+          </div>
+
+          <input type="hidden" id="editingId" value="" />
+
+          <button class="btn-primary" id="saveBtn">Save &amp; Activate Profile</button>
+          <button class="btn-secondary" id="cancelEditBtn" style="display:none">Cancel Edit</button>
+          <div class="status" id="status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>
