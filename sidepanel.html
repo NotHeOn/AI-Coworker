@@ -34,6 +34,10 @@
     <div class="page-context" id="pageContext">
       <span class="context-icon">📄</span>
       <span class="context-text" id="contextText">No page loaded</span>
+      <label class="toggle-label" title="Re-read page content on every message (default: only on first message)">
+        <input type="checkbox" id="syncPageToggle" />
+        <span class="toggle-text">Sync page</span>
+      </label>
     </div>
 
     <!-- Chat messages -->
@@ -76,8 +80,8 @@
     </div>
   </div>
 
-  <!-- Marked.js for markdown rendering (CDN-free, bundled inline) -->
+  <!-- Marked.js must run as classic script first so window.marked is set before module code runs -->
   <script src="marked.min.js"></script>
-  <script src="sidepanel.js"></script>
+  <script type="module" src="sidepanel.js"></script>
 </body>
 </html>

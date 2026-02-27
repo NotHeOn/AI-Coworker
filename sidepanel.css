@@ -101,6 +101,16 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.context-text:hover {
+  background: rgba(124, 106, 255, 0.12);
+  color: var(--accent);
 }
 
 .toggle-label {
@@ -197,6 +207,14 @@ body {
   max-width: 100%;
 }
 
+/* message-header wraps role label + edit button for user messages */
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
 .message-role {
   font-size: 10px;
   font-weight: 600;
@@ -204,10 +222,107 @@ body {
   letter-spacing: 0.06em;
   color: var(--text-muted);
   padding: 0 2px;
+  flex: 1;
 }
+
+/* standalone role (assistant) keeps original padding */
+.message.assistant > .message-role { padding: 0 2px; }
 
 .message.user .message-role { color: var(--accent); }
 .message.assistant .message-role { color: var(--text-muted); }
+
+/* ── Edit message button ── */
+.edit-msg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.message.user:hover .edit-msg-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.edit-msg-btn:hover {
+  background: rgba(124, 106, 255, 0.15);
+  color: var(--accent);
+}
+
+/* ── Inline edit editor ── */
+.edit-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(124, 106, 255, 0.4);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 7px 10px;
+  resize: none;
+  outline: none;
+  min-height: 36px;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+.edit-textarea:focus {
+  border-color: var(--accent);
+}
+
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 7px;
+}
+
+.edit-cancel-btn,
+.edit-resend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 11px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.edit-cancel-btn {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.edit-cancel-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.edit-resend-btn {
+  background: var(--accent);
+  color: white;
+}
+
+.edit-resend-btn:hover {
+  background: var(--accent-hover);
+}
 
 .message-content {
   padding: 10px 13px;
@@ -370,6 +485,8 @@ textarea#instruction::-webkit-scrollbar-thumb { background: var(--border); }
 .send-btn:hover { background: var(--accent-hover); }
 .send-btn:active { transform: scale(0.95); }
 .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+.send-btn.stop-mode { background: var(--error); }
+.send-btn.stop-mode:hover { background: #e05555; }
 
 .input-footer {
   display: flex;
@@ -535,4 +652,50 @@ textarea#instruction::-webkit-scrollbar-thumb { background: var(--border); }
   color: var(--accent);
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* ── Citation chips ── */
+cite.citation-chip {
+  display: inline-flex;
+  align-items: center;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  background: rgba(124, 106, 255, 0.18);
+  color: var(--accent);
+  border: 1px solid rgba(124, 106, 255, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: baseline;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+cite.citation-chip:hover {
+  background: rgba(124, 106, 255, 0.32);
+  border-color: var(--accent);
+}
+
+/* ── Stream stopped note ── */
+.stream-stopped {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Tab status variants ── */
+.context-text.status-loading {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.context-text.status-restricted {
+  color: var(--error);
+  opacity: 0.8;
 }

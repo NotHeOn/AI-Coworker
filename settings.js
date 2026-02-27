@@ -1,4 +1,4 @@
-// ── DOM refs ──
+// ── DOM refs — Profiles ──
 const profileListEl = document.getElementById("profileList");
 const formPanelTitle = document.getElementById("formPanelTitle");
 const profileNameInput = document.getElementById("profileName");
@@ -11,40 +11,50 @@ const cancelEditBtn = document.getElementById("cancelEditBtn");
 const editingIdInput = document.getElementById("editingId");
 const statusEl = document.getElementById("status");
 
-// ── Preset configs ──
-const PRESETS = {
-  claude: {
-    name: "Claude",
-    baseUrl: "https://api.anthropic.com/v1",
-    modelName: "claude-opus-4-6"
-  },
-  openai: {
-    name: "OpenAI GPT-4o",
-    baseUrl: "https://api.openai.com/v1",
-    modelName: "gpt-4o"
-  },
-  ollama: {
-    name: "Ollama (local)",
-    baseUrl: "http://localhost:11434/v1",
-    modelName: "llama3"
-  }
+// ── DOM refs — Presets ──
+const presetListEl = document.getElementById("presetList");
+const presetLabelInput = document.getElementById("presetLabel");
+const presetPromptInput = document.getElementById("presetPrompt");
+const presetSaveBtn = document.getElementById("presetSaveBtn");
+const presetCancelBtn = document.getElementById("presetCancelBtn");
+const presetResetBtn = document.getElementById("presetResetBtn");
+const presetEditingIdInput = document.getElementById("presetEditingId");
+const presetStatusEl = document.getElementById("presetStatus");
+
+// ── Preset quick-fill configs ──
+const PROVIDER_PRESETS = {
+  claude: { name: "Claude", baseUrl: "https://api.anthropic.com/v1", modelName: "claude-opus-4-6" },
+  openai: { name: "OpenAI GPT-4o", baseUrl: "https://api.openai.com/v1", modelName: "gpt-4o" },
+  ollama: { name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", modelName: "llama3" }
 };
+
+// Default prompt presets — keep in sync with background/PresetManager.js
+const DEFAULT_PRESETS = [
+  { id: "preset-summarize", label: "Summarize", prompt: "Summarize this page in 3 bullet points." },
+  { id: "preset-keypoints", label: "Key Points", prompt: "What are the key takeaways from this page?" },
+  { id: "preset-facts", label: "Extract Facts", prompt: "Extract all important facts and data from this page." },
+  { id: "preset-nextsteps", label: "Next Steps", prompt: "What action should I take based on this page?" }
+];
 
 // ── State ──
 let profiles = [];
 let activeProfileId = null;
+let presets = [];
 
 // ── Init ──
 async function init() {
-  const data = await chrome.storage.local.get(["profiles", "activeProfileId"]);
+  const data = await chrome.storage.local.get(["profiles", "activeProfileId", "presets"]);
   profiles = data.profiles || [];
   activeProfileId = data.activeProfileId || null;
+  presets = data.presets || DEFAULT_PRESETS.map(p => ({ ...p }));
   renderProfiles();
+  renderPresets();
 }
 
 init();
 
-// ── Render profiles list ──
+// ── Profiles ─────────────────────────────────────────────────────────────────
+
 function renderProfiles() {
   profileListEl.innerHTML = "";
 
@@ -75,7 +85,6 @@ function renderProfiles() {
     profileListEl.appendChild(card);
   }
 
-  // Bind action buttons
   profileListEl.querySelectorAll("[data-id]").forEach(btn => {
     btn.addEventListener("click", () => setActive(btn.dataset.id));
   });
@@ -87,19 +96,16 @@ function renderProfiles() {
   });
 }
 
-// ── Set active ──
 async function setActive(id) {
   activeProfileId = id;
   await chrome.storage.local.set({ activeProfileId });
   renderProfiles();
-  chrome.runtime.sendMessage({ type: "PROFILE_UPDATED" }).catch(() => {});
+  chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" }).catch(() => {});
 }
 
-// ── Start editing a profile ──
 function startEdit(id) {
   const profile = profiles.find(p => p.id === id);
   if (!profile) return;
-
   editingIdInput.value = id;
   profileNameInput.value = profile.name;
   baseUrlInput.value = profile.baseUrl;
@@ -107,16 +113,12 @@ function startEdit(id) {
   apiKeyInput.value = profile.apiKey || "";
   apiKeyInput.type = "password";
   toggleBtn.textContent = "Show";
-
   formPanelTitle.textContent = "Edit Profile";
   saveBtn.textContent = "Save & Activate Profile";
   cancelEditBtn.style.display = "";
 }
 
-// ── Cancel edit ──
-cancelEditBtn.addEventListener("click", () => {
-  clearForm();
-});
+cancelEditBtn.addEventListener("click", () => clearForm());
 
 function clearForm() {
   editingIdInput.value = "";
@@ -133,24 +135,18 @@ function clearForm() {
   statusEl.className = "status";
 }
 
-// ── Delete ──
 async function deleteProfile(id) {
   profiles = profiles.filter(p => p.id !== id);
-  if (activeProfileId === id) {
-    activeProfileId = profiles[0]?.id || null;
-  }
+  if (activeProfileId === id) activeProfileId = profiles[0]?.id || null;
   await chrome.storage.local.set({ profiles, activeProfileId });
   renderProfiles();
-  chrome.runtime.sendMessage({ type: "PROFILE_UPDATED" }).catch(() => {});
-
-  // If we were editing this profile, clear the form
+  chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" }).catch(() => {});
   if (editingIdInput.value === id) clearForm();
 }
 
-// ── Save (add or update) ──
 saveBtn.addEventListener("click", async () => {
   const name = profileNameInput.value.trim();
-  const baseUrl = baseUrlInput.value.trim().replace(/\/$/, ""); // strip trailing slash
+  const baseUrl = baseUrlInput.value.trim().replace(/\/$/, "");
   const modelName = modelNameInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
 
@@ -159,22 +155,11 @@ saveBtn.addEventListener("click", async () => {
   if (!modelName) { showStatus("Model name is required.", "error"); return; }
 
   const editingId = editingIdInput.value;
-
   if (editingId) {
-    // Update existing
-    profiles = profiles.map(p =>
-      p.id === editingId ? { ...p, name, baseUrl, modelName, apiKey } : p
-    );
+    profiles = profiles.map(p => p.id === editingId ? { ...p, name, baseUrl, modelName, apiKey } : p);
     activeProfileId = editingId;
   } else {
-    // Add new
-    const newProfile = {
-      id: crypto.randomUUID(),
-      name,
-      baseUrl,
-      modelName,
-      apiKey
-    };
+    const newProfile = { id: crypto.randomUUID(), name, baseUrl, modelName, apiKey };
     profiles.push(newProfile);
     activeProfileId = newProfile.id;
   }
@@ -183,41 +168,149 @@ saveBtn.addEventListener("click", async () => {
   renderProfiles();
   clearForm();
   showStatus("Profile saved and activated!", "success");
-  chrome.runtime.sendMessage({ type: "PROFILE_UPDATED" }).catch(() => {});
+  chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" }).catch(() => {});
 });
 
-// ── Toggle API key visibility ──
 toggleBtn.addEventListener("click", () => {
-  if (apiKeyInput.type === "password") {
-    apiKeyInput.type = "text";
-    toggleBtn.textContent = "Hide";
-  } else {
-    apiKeyInput.type = "password";
-    toggleBtn.textContent = "Show";
-  }
+  apiKeyInput.type = apiKeyInput.type === "password" ? "text" : "password";
+  toggleBtn.textContent = apiKeyInput.type === "password" ? "Show" : "Hide";
 });
 
-// ── Preset quick-fill ──
 document.querySelectorAll(".preset-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    const preset = PRESETS[btn.dataset.preset];
+    const preset = PROVIDER_PRESETS[btn.dataset.preset];
     if (!preset) return;
     profileNameInput.value = preset.name;
     baseUrlInput.value = preset.baseUrl;
     modelNameInput.value = preset.modelName;
-    // Don't overwrite apiKey — user fills that
     profileNameInput.focus();
   });
 });
 
-// ── Helpers ──
+// ── Presets ───────────────────────────────────────────────────────────────────
+
+function renderPresets() {
+  presetListEl.innerHTML = "";
+
+  if (presets.length === 0) {
+    presetListEl.innerHTML = `<div class="empty-state">No presets. Add one using the form.</div>`;
+    return;
+  }
+
+  presets.forEach((preset, idx) => {
+    const row = document.createElement("div");
+    row.className = "preset-row";
+    row.innerHTML = `
+      <div class="preset-row-info">
+        <span class="preset-row-label">${escHtml(preset.label)}</span>
+        <span class="preset-row-preview">${escHtml(preset.prompt.slice(0, 60))}${preset.prompt.length > 60 ? "…" : ""}</span>
+      </div>
+      <div class="preset-row-actions">
+        <button class="btn-sm" data-up="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
+        <button class="btn-sm" data-down="${idx}" ${idx === presets.length - 1 ? "disabled" : ""}>↓</button>
+        <button class="btn-sm" data-edit-preset="${idx}">Edit</button>
+        <button class="btn-sm danger" data-del-preset="${idx}">Delete</button>
+      </div>
+    `;
+    presetListEl.appendChild(row);
+  });
+
+  presetListEl.querySelectorAll("[data-up]").forEach(btn => {
+    btn.addEventListener("click", () => movePreset(parseInt(btn.dataset.up), -1));
+  });
+  presetListEl.querySelectorAll("[data-down]").forEach(btn => {
+    btn.addEventListener("click", () => movePreset(parseInt(btn.dataset.down), 1));
+  });
+  presetListEl.querySelectorAll("[data-edit-preset]").forEach(btn => {
+    btn.addEventListener("click", () => startPresetEdit(parseInt(btn.dataset.editPreset)));
+  });
+  presetListEl.querySelectorAll("[data-del-preset]").forEach(btn => {
+    btn.addEventListener("click", () => deletePreset(parseInt(btn.dataset.delPreset)));
+  });
+}
+
+function startPresetEdit(idx) {
+  const preset = presets[idx];
+  if (!preset) return;
+  presetEditingIdInput.value = String(idx);
+  presetLabelInput.value = preset.label;
+  presetPromptInput.value = preset.prompt;
+  presetSaveBtn.textContent = "Save Preset";
+  presetCancelBtn.style.display = "";
+}
+
+function clearPresetForm() {
+  presetEditingIdInput.value = "";
+  presetLabelInput.value = "";
+  presetPromptInput.value = "";
+  presetSaveBtn.textContent = "Add Preset";
+  presetCancelBtn.style.display = "none";
+  presetStatusEl.textContent = "";
+  presetStatusEl.className = "status";
+}
+
+presetCancelBtn.addEventListener("click", clearPresetForm);
+
+presetSaveBtn.addEventListener("click", async () => {
+  const label = presetLabelInput.value.trim();
+  const prompt = presetPromptInput.value.trim();
+  if (!label) { showPresetStatus("Label is required.", "error"); return; }
+  if (!prompt) { showPresetStatus("Prompt is required.", "error"); return; }
+
+  const editIdx = presetEditingIdInput.value;
+  if (editIdx !== "") {
+    presets[parseInt(editIdx)] = { ...presets[parseInt(editIdx)], label, prompt };
+  } else {
+    presets.push({ id: crypto.randomUUID(), label, prompt });
+  }
+
+  await savePresets();
+  renderPresets();
+  clearPresetForm();
+  showPresetStatus("Preset saved!", "success");
+});
+
+presetResetBtn.addEventListener("click", async () => {
+  if (!confirm("Reset presets to defaults? This cannot be undone.")) return;
+  presets = DEFAULT_PRESETS.map(p => ({ ...p }));
+  await savePresets();
+  renderPresets();
+  clearPresetForm();
+  showPresetStatus("Presets reset to defaults.", "success");
+});
+
+async function deletePreset(idx) {
+  presets.splice(idx, 1);
+  await savePresets();
+  renderPresets();
+  clearPresetForm();
+}
+
+async function movePreset(idx, direction) {
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= presets.length) return;
+  [presets[idx], presets[newIdx]] = [presets[newIdx], presets[idx]];
+  await savePresets();
+  renderPresets();
+}
+
+async function savePresets() {
+  await chrome.storage.local.set({ presets });
+  chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" }).catch(() => {});
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function showStatus(msg, type) {
   statusEl.textContent = msg;
   statusEl.className = `status ${type}`;
-  setTimeout(() => {
-    statusEl.textContent = "";
-    statusEl.className = "status";
-  }, 3000);
+  setTimeout(() => { statusEl.textContent = ""; statusEl.className = "status"; }, 3000);
+}
+
+function showPresetStatus(msg, type) {
+  presetStatusEl.textContent = msg;
+  presetStatusEl.className = `status ${type}`;
+  setTimeout(() => { presetStatusEl.textContent = ""; presetStatusEl.className = "status"; }, 3000);
 }
 
 function escHtml(str) {

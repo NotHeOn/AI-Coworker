@@ -30,11 +30,7 @@
       padding: 32px 20px;
     }
 
-    .container {
-      width: 100%;
-      max-width: 760px;
-      margin: 0 auto;
-    }
+    .container { width: 100%; max-width: 760px; margin: 0 auto; }
 
     .header {
       display: flex;
@@ -42,13 +38,8 @@
       gap: 10px;
       margin-bottom: 28px;
     }
-
     .header img { width: 28px; height: 28px; border-radius: 6px; }
-
-    .header h1 {
-      font-size: 18px;
-      font-weight: 600;
-    }
+    .header h1 { font-size: 18px; font-weight: 600; }
 
     /* ── Two-panel layout ── */
     .layout {
@@ -57,12 +48,18 @@
       gap: 20px;
       align-items: start;
     }
+    @media (max-width: 600px) { .layout { grid-template-columns: 1fr; } }
 
-    @media (max-width: 600px) {
-      .layout { grid-template-columns: 1fr; }
+    /* ── Section heading ── */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 32px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
     }
 
-    /* ── Panel headings ── */
     .panel-title {
       font-size: 13px;
       font-weight: 600;
@@ -73,11 +70,7 @@
     }
 
     /* ── Profile list ── */
-    .profile-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .profile-list { display: flex; flex-direction: column; gap: 10px; }
 
     .profile-card {
       background: var(--surface);
@@ -89,29 +82,17 @@
       gap: 6px;
       transition: border-color 0.15s;
     }
+    .profile-card.active { border-color: var(--accent); }
 
-    .profile-card.active {
-      border-color: var(--accent);
-    }
-
-    .profile-card-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .profile-name {
-      font-size: 14px;
-      font-weight: 600;
-      flex: 1;
-    }
+    .profile-card-header { display: flex; align-items: center; gap: 8px; }
+    .profile-name { font-size: 14px; font-weight: 600; flex: 1; }
 
     .active-badge {
       font-size: 10px;
       font-weight: 600;
-      background: rgba(124, 106, 255, 0.18);
+      background: rgba(124,106,255,0.18);
       color: var(--accent);
-      border: 1px solid rgba(124, 106, 255, 0.35);
+      border: 1px solid rgba(124,106,255,0.35);
       padding: 2px 7px;
       border-radius: 10px;
     }
@@ -123,12 +104,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-
-    .profile-actions {
-      display: flex;
-      gap: 6px;
-      margin-top: 4px;
-    }
+    .profile-actions { display: flex; gap: 6px; margin-top: 4px; }
 
     .btn-sm {
       padding: 4px 10px;
@@ -142,24 +118,11 @@
       color: var(--text-muted);
       transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
-
     .btn-sm:hover { background: var(--border); color: var(--text); }
-
-    .btn-sm.activate {
-      border-color: rgba(124, 106, 255, 0.4);
-      color: var(--accent);
-    }
-
-    .btn-sm.activate:hover {
-      background: rgba(124, 106, 255, 0.15);
-      border-color: var(--accent);
-    }
-
-    .btn-sm.danger:hover {
-      background: rgba(248, 113, 113, 0.15);
-      border-color: rgba(248, 113, 113, 0.4);
-      color: var(--error);
-    }
+    .btn-sm:disabled { opacity: 0.35; cursor: default; }
+    .btn-sm.activate { border-color: rgba(124,106,255,0.4); color: var(--accent); }
+    .btn-sm.activate:hover { background: rgba(124,106,255,0.15); border-color: var(--accent); }
+    .btn-sm.danger:hover { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.4); color: var(--error); }
 
     .empty-state {
       background: var(--surface);
@@ -180,16 +143,9 @@
       padding: 20px;
     }
 
-    .form-title {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      color: var(--text);
-    }
+    .form-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
 
-    .field {
-      margin-bottom: 14px;
-    }
+    .field { margin-bottom: 14px; }
 
     label {
       display: block;
@@ -203,7 +159,8 @@
 
     input[type="password"],
     input[type="text"],
-    input[type="url"] {
+    input[type="url"],
+    textarea {
       width: 100%;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -215,14 +172,10 @@
       outline: none;
       transition: border-color 0.15s;
     }
+    textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+    input:focus, textarea:focus { border-color: var(--accent); }
 
-    input:focus { border-color: var(--accent); }
-
-    .input-row {
-      display: flex;
-      gap: 8px;
-    }
-
+    .input-row { display: flex; gap: 8px; }
     .input-row input { flex: 1; }
 
     .toggle-visibility {
@@ -237,17 +190,10 @@
       white-space: nowrap;
       transition: background 0.15s;
     }
-
     .toggle-visibility:hover { background: var(--border); }
 
-    /* Preset buttons */
-    .presets {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-
+    /* Provider preset buttons */
+    .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
     .preset-btn {
       padding: 5px 11px;
       background: var(--surface2);
@@ -259,10 +205,9 @@
       cursor: pointer;
       transition: all 0.15s;
     }
-
     .preset-btn:hover {
-      background: rgba(124, 106, 255, 0.12);
-      border-color: rgba(124, 106, 255, 0.4);
+      background: rgba(124,106,255,0.12);
+      border-color: rgba(124,106,255,0.4);
       color: var(--accent);
     }
 
@@ -280,7 +225,6 @@
       margin-top: 6px;
       transition: background 0.15s;
     }
-
     .btn-primary:hover { background: #6b58ee; }
 
     .btn-secondary {
@@ -297,8 +241,23 @@
       margin-top: 6px;
       transition: background 0.15s;
     }
-
     .btn-secondary:hover { background: var(--surface2); color: var(--text); }
+
+    .btn-danger-outline {
+      width: 100%;
+      padding: 9px;
+      background: transparent;
+      color: var(--error);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 8px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-danger-outline:hover { background: rgba(248,113,113,0.08); border-color: var(--error); }
 
     .status {
       margin-top: 10px;
@@ -306,16 +265,37 @@
       text-align: center;
       min-height: 18px;
     }
-
     .status.success { color: var(--success); }
     .status.error { color: var(--error); }
 
-    .helper {
+    .helper { font-size: 11px; color: var(--text-muted); margin-top: 5px; line-height: 1.5; }
+
+    /* ── Presets panel ── */
+    .preset-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .preset-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .preset-row-info { flex: 1; min-width: 0; }
+    .preset-row-label { font-size: 13px; font-weight: 600; display: block; }
+    .preset-row-preview {
       font-size: 11px;
       color: var(--text-muted);
-      margin-top: 5px;
-      line-height: 1.5;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
     }
+
+    .preset-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -325,13 +305,13 @@
       <h1>AI Coworker — Settings</h1>
     </div>
 
+    <!-- ── Profiles section ── -->
+    <div class="section-title">Model Profiles</div>
     <div class="layout">
       <!-- Left: Profiles list -->
       <div>
         <div class="panel-title">Saved Profiles</div>
-        <div class="profile-list" id="profileList">
-          <!-- Rendered by JS -->
-        </div>
+        <div class="profile-list" id="profileList"></div>
       </div>
 
       <!-- Right: Add/Edit form -->
@@ -363,7 +343,7 @@
           <div class="field">
             <label for="apiKey">API Key</label>
             <div class="input-row">
-              <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" />
+              <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" />
               <button class="toggle-visibility" id="toggleVisibility">Show</button>
             </div>
             <p class="helper">Leave blank for local models that don't require authentication.</p>
@@ -374,6 +354,39 @@
           <button class="btn-primary" id="saveBtn">Save &amp; Activate Profile</button>
           <button class="btn-secondary" id="cancelEditBtn" style="display:none">Cancel Edit</button>
           <div class="status" id="status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Presets section ── -->
+    <div class="section-title">Quick Prompt Presets</div>
+    <div class="layout">
+      <!-- Left: Preset list -->
+      <div>
+        <div class="panel-title">Saved Presets</div>
+        <div class="preset-list" id="presetList"></div>
+      </div>
+
+      <!-- Right: Add/Edit preset form -->
+      <div>
+        <div class="panel-title">Add / Edit Preset</div>
+        <div class="form-card">
+          <div class="field">
+            <label for="presetLabel">Button Label</label>
+            <input type="text" id="presetLabel" placeholder="e.g. Summarize" maxlength="40" />
+          </div>
+
+          <div class="field">
+            <label for="presetPrompt">Prompt</label>
+            <textarea id="presetPrompt" placeholder="e.g. Summarize this page in 3 bullet points." rows="4"></textarea>
+          </div>
+
+          <input type="hidden" id="presetEditingId" value="" />
+
+          <button class="btn-primary" id="presetSaveBtn">Add Preset</button>
+          <button class="btn-secondary" id="presetCancelBtn" style="display:none">Cancel Edit</button>
+          <button class="btn-danger-outline" id="presetResetBtn">Reset to Defaults</button>
+          <div class="status" id="presetStatus"></div>
         </div>
       </div>
     </div>
