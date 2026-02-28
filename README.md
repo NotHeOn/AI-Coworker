@@ -1,6 +1,6 @@
 # AI Coworker — Chrome Extension
 
-A Chrome side-panel extension that reads the current page and lets you chat with any AI model (Claude, OpenAI-compatible, or local) about it. Supports streaming responses, inline citations that scroll to the source paragraph, and conversation branching via message editing.
+A Chrome side-panel extension that reads the current page and lets you chat with any AI model (Claude, OpenAI-compatible, or local) about it. Supports streaming responses, inline citations that scroll to the source paragraph, persistent chat history, and conversation branching via message editing.
 
 ---
 
@@ -11,10 +11,12 @@ A Chrome side-panel extension that reads the current page and lets you chat with
 - **Page-aware context** — automatically extracts the page's readable content and sends it with your message
 - **Inline citations** — the AI can reference specific paragraphs (`[§p-3]`); clicking a citation scrolls the page to that element
 - **Streaming responses** — token-by-token output with a stop button (Esc or click)
-- **Per-tab conversation history** — each browser tab keeps its own chat; switching tabs restores the previous conversation
+- **Persistent chat history** — conversations are saved per URL and restored automatically when you return to a page; switching between `a.com/hello` and `a.com/pricing` keeps separate histories
+- **History view** — click the clock icon to browse, load, or delete past conversations for the current domain
 - **Message node editing** — hover any past user message, click the pencil icon, edit the text, and resend — the conversation branches from that point
 - **SPA navigation awareness** — detects client-side route changes and invalidates the page content cache
 - **Quick-prompt presets** — configurable one-click prompts on the welcome screen
+- **Selected-text context** — select text on the page before asking a question; it's attached as context to your message
 - **Content preview** — click the page title bar to open the raw extracted markdown in a new tab
 
 ---
@@ -51,7 +53,7 @@ This means you can point it at **Ollama** (`http://localhost:11434`), **OpenRout
 
 ### Presets
 
-Quick-prompt buttons on the welcome screen. Edit them in Settings → Presets.
+Quick-prompt buttons on the welcome screen. Edit them in **Settings → Quick Prompt Presets**.
 
 ---
 
@@ -62,6 +64,8 @@ Quick-prompt buttons on the welcome screen. Edit them in Settings → Presets.
 3. Press **Enter** or click the send button
 4. Click any `§` citation chip to scroll the page to the referenced paragraph
 5. **Edit a past message**: hover it → click the pencil → edit → press Enter or click **Resend ↑**
+6. **Browse history**: click the clock icon (top-right) to see all conversations for the current domain; click a record to resume it or trash it to delete
+7. **New conversation**: click the pencil-square icon to start fresh on the current page
 
 ---
 
@@ -88,7 +92,9 @@ Chrome Extension/
 │   ├── ExtensionController.js # Central message router
 │   └── sseParser.js           # Async generator for SSE streams
 └── sidepanel/
-    ├── ConversationManager.js # Per-tab history storage
+    ├── ChatRecord.js          # Single conversation thread (messages, auto-title)
+    ├── ChatGroup.js           # All records for one origin
+    ├── ChatGroupManager.js    # Persistent history manager; URL-based record matching
     ├── CitationRenderer.js    # Parses [§id] anchors → clickable chips
     ├── SidePanelUI.js         # All DOM operations
     └── SidePanelController.js # Coordinates UI ↔ background messaging
@@ -106,4 +112,4 @@ Chrome Extension/
 
 ## Privacy
 
-Your API key is stored locally in `chrome.storage.local` and is only ever sent directly to the model provider you configure. Page content is sent to that provider when you send a message. Nothing is collected by this extension.
+Your API key is stored locally in `chrome.storage.local` and is only ever sent directly to the model provider you configure. Page content is sent to that provider when you send a message. Chat history is stored locally in `chrome.storage.local` and never leaves your browser. Nothing is collected by this extension.
