@@ -11,8 +11,10 @@ A Chrome side-panel extension that reads the current page and lets you chat with
 - **Page-aware context** — automatically extracts the page's readable content and sends it with your message
 - **Inline citations** — the AI can reference specific paragraphs (`[§p-3]`); clicking a citation scrolls the page to that element
 - **Streaming responses** — token-by-token output with a stop button (Esc or click)
-- **Persistent chat history** — conversations are saved per URL and restored automatically when you return to a page; switching between `a.com/hello` and `a.com/pricing` keeps separate histories
-- **History view** — click the clock icon to browse, load, or delete past conversations for the current domain
+- **Persistent chat history** — conversations are saved per URL and restored automatically when you return to a page; switching between `a.com/hello` and `a.com/pricing` keeps separate histories; records are named `{PageTitle}_{HH:MM}` by default
+- **History view** — click the clock icon to browse, load, or delete past conversations for the current domain; **View All** opens the full history in Settings
+- **Cross-page history import** — loading a record from a different URL prompts you to start a new conversation or import it directly (auto-enables Sync Page)
+- **Safe link opening** — URLs in AI responses show a confirmation dialog before opening in a new tab
 - **Message node editing** — hover any past user message, click the pencil icon, edit the text, and resend — the conversation branches from that point
 - **SPA navigation awareness** — detects client-side route changes and invalidates the page content cache
 - **Quick-prompt presets** — configurable one-click prompts on the welcome screen
@@ -64,8 +66,9 @@ Quick-prompt buttons on the welcome screen. Edit them in **Settings → Quick Pr
 3. Press **Enter** or click the send button
 4. Click any `§` citation chip to scroll the page to the referenced paragraph
 5. **Edit a past message**: hover it → click the pencil → edit → press Enter or click **Resend ↑**
-6. **Browse history**: click the clock icon (top-right) to see all conversations for the current domain; click a record to resume it or trash it to delete
-7. **New conversation**: click the pencil-square icon to start fresh on the current page
+6. **Browse history**: click the clock icon (top-right) to see all conversations for the current domain; click a record to resume it or trash it to delete; click **View All** to open the full history in Settings
+7. **Load a record from another page**: if the record's URL differs from the current tab, choose to start a new conversation or import it (Sync Page is turned on automatically)
+8. **New conversation**: click the pencil-square icon to start fresh on the current page
 
 ---
 
@@ -92,7 +95,7 @@ Chrome Extension/
 │   ├── ExtensionController.js # Central message router
 │   └── sseParser.js           # Async generator for SSE streams
 └── sidepanel/
-    ├── ChatRecord.js          # Single conversation thread (messages, auto-title)
+    ├── ChatRecord.js          # Single conversation thread; title defaults to {pageTitle}_{HH:MM}
     ├── ChatGroup.js           # All records for one origin
     ├── ChatGroupManager.js    # Persistent history manager; URL-based record matching
     ├── CitationRenderer.js    # Parses [§id] anchors → clickable chips
