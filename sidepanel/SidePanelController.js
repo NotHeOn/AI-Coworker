@@ -11,6 +11,7 @@ export class SidePanelController {
     this._profiles = [];
     this._activeProfileId = null;
     this._presets = [];
+    this._selectedText = "";
   }
 
   async init() {
@@ -41,6 +42,12 @@ export class SidePanelController {
 
     // Listen for background broadcasts
     chrome.runtime.onMessage.addListener((msg) => this._onMessage(msg));
+
+    // Dismiss chip on user click
+    this._ui.selectionChipDismissEl.addEventListener("click", () => {
+      this._selectedText = "";
+      this._ui.hideSelectionChip();
+    });
   }
 
   // ── Event binding ─────────────────────────────────────────────────────────
@@ -166,6 +173,11 @@ export class SidePanelController {
     const instruction = this._ui.instructionEl.value.trim();
     if (!instruction || this._isStreaming) return;
 
+    // Capture and clear selected text before any async work
+    const selectedText = this._selectedText;
+    this._selectedText = "";
+    this._ui.hideSelectionChip();
+
     this._isStreaming = true;
     this._ui.setStreaming(true);
     this._ui.instructionEl.value = "";
@@ -175,7 +187,7 @@ export class SidePanelController {
     const historySnapshot = this._conversation.getHistory();
     const syncPage = this._ui.getSyncPage();
 
-    this._ui.addMessage("user", instruction);
+    this._ui.addMessage("user", instruction, false, 0, selectedText);
     const { contentEl } = this._ui.addMessage("assistant", "", true);
 
     let accumulated = "";
@@ -219,7 +231,8 @@ export class SidePanelController {
       tabId: this._activeTabId,
       instruction,
       history: historySnapshot, // previous turns only; background adds current turn
-      syncPage                  // if true, background re-fetches content even mid-conversation
+      syncPage,                 // if true, background re-fetches content even mid-conversation
+      selectedText              // selected text on page at the time of sending (may be empty)
     });
   }
 
@@ -252,6 +265,16 @@ export class SidePanelController {
       case "SETTINGS_UPDATED":
         this._refreshSettings();
         break;
+      case "SELECTION_CHANGED":
+        if (msg.tabId === this._activeTabId) {
+          this._selectedText = msg.text || "";
+          if (this._selectedText) {
+            this._ui.showSelectionChip(this._selectedText);
+          } else {
+            this._ui.hideSelectionChip();
+          }
+        }
+        break;
     }
   }
 
@@ -259,6 +282,10 @@ export class SidePanelController {
     const newTabId = tabInfo.id;
     this._activeTabId = newTabId;
     this._ui.updateTabStatus(tabInfo);
+
+    // Clear selection state from previous tab
+    this._selectedText = "";
+    this._ui.hideSelectionChip();
 
     // Switch conversation to the new tab
     const hadHistory = this._conversation.setActiveTab(newTabId);

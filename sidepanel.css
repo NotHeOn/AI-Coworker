@@ -488,6 +488,79 @@ textarea#instruction::-webkit-scrollbar-thumb { background: var(--border); }
 .send-btn.stop-mode { background: var(--error); }
 .send-btn.stop-mode:hover { background: #e05555; }
 
+/* ── Selection chip ── */
+.selection-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px 4px 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.selection-chip.hidden { display: none; }
+
+.selection-chip-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.selection-chip-text {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.selection-chip-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+.selection-chip-dismiss:hover { color: var(--text); background: var(--border); }
+
+/* ── Selected-text badge on user messages ── */
+.selected-text-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 5px 8px;
+  background: rgba(124, 106, 255, 0.08);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.selected-text-badge-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.selected-text-badge-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .input-footer {
   display: flex;
   align-items: center;

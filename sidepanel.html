@@ -60,6 +60,13 @@
       <!-- Profile dropdown (shown above input when open) -->
       <div id="profileDropdown" class="profile-dropdown hidden"></div>
 
+      <!-- Selection chip — shown when the user has text selected on the page -->
+      <div id="selectionChip" class="selection-chip hidden">
+        <span class="selection-chip-icon">✂</span>
+        <span id="selectionChipText" class="selection-chip-text"></span>
+        <button id="selectionChipDismiss" class="selection-chip-dismiss" title="Clear selection">×</button>
+      </div>
+
       <div class="input-wrapper">
         <textarea
           id="instruction"

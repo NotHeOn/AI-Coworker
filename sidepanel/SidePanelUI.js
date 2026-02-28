@@ -14,7 +14,24 @@ export class SidePanelUI {
     this.charCountEl     = document.getElementById("charCount");
     this.profileSwitcher = document.getElementById("profileSwitcher");
     this.profileDropdown = document.getElementById("profileDropdown");
-    this.syncPageToggle  = document.getElementById("syncPageToggle");
+    this.syncPageToggle          = document.getElementById("syncPageToggle");
+    this.selectionChipEl         = document.getElementById("selectionChip");
+    this.selectionChipTextEl     = document.getElementById("selectionChipText");
+    this.selectionChipDismissEl  = document.getElementById("selectionChipDismiss");
+  }
+
+  // ── Selection chip ────────────────────────────────────────────────────────
+
+  showSelectionChip(text) {
+    const MAX = 60;
+    const label = text.length > MAX ? text.slice(0, MAX) + "…" : text;
+    this.selectionChipTextEl.textContent = label;
+    this.selectionChipEl.classList.remove("hidden");
+  }
+
+  hideSelectionChip() {
+    this.selectionChipEl.classList.add("hidden");
+    this.selectionChipTextEl.textContent = "";
   }
 
   // ── Welcome screen ────────────────────────────────────────────────────────
@@ -149,12 +166,13 @@ export class SidePanelUI {
   // ── Messages ──────────────────────────────────────────────────────────────
 
   /**
-   * @param {string} role        "user" | "assistant"
-   * @param {string} content     raw text (markdown + optional [§id] anchors)
-   * @param {boolean} isLoading  show spinner instead of content
-   * @param {number}  tabId      used to bind citation chip clicks (0 = no citations)
+   * @param {string} role          "user" | "assistant"
+   * @param {string} content       raw text (markdown + optional [§id] anchors)
+   * @param {boolean} isLoading    show spinner instead of content
+   * @param {number}  tabId        used to bind citation chip clicks (0 = no citations)
+   * @param {string}  selectedText optional selected text attached to a user message
    */
-  addMessage(role, content, isLoading = false, tabId = 0) {
+  addMessage(role, content, isLoading = false, tabId = 0, selectedText = "") {
     // Remove welcome screen on first real message
     this.messagesEl.querySelector(".welcome")?.remove();
 
@@ -198,6 +216,18 @@ export class SidePanelUI {
     }
 
     msgEl.appendChild(contentEl);
+
+    // Attach selected-text badge to user messages that included a selection
+    if (role === "user" && selectedText) {
+      const MAX = 80;
+      const preview = selectedText.length > MAX ? selectedText.slice(0, MAX) + "…" : selectedText;
+      const badge = document.createElement("div");
+      badge.className = "selected-text-badge";
+      badge.title = selectedText;
+      badge.innerHTML = `<span class="selected-text-badge-icon">✂</span><span class="selected-text-badge-label">${escHtml(preview)}</span>`;
+      msgEl.appendChild(badge);
+    }
+
     this.messagesEl.appendChild(msgEl);
     this._scrollToBottom();
     return { msgEl, contentEl };
