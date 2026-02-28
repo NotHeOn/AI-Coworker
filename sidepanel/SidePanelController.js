@@ -139,6 +139,11 @@ export class SidePanelController {
     // Back button inside history view
     ui.historyBackBtn.addEventListener("click", () => ui.hideHistoryView());
 
+    // View All — open Settings page at Chat History section
+    ui.historyViewAllBtn.addEventListener("click", () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL("settings.html") + "#chatHistorySection" });
+    });
+
     // New record button inside history view
     ui.historyNewBtn.addEventListener("click", async () => {
       this._conversation.newRecord(this._activeTabUrl, this._activeTabTitle);
@@ -201,12 +206,44 @@ export class SidePanelController {
   // ── Record switching & deletion ───────────────────────────────────────────
 
   _switchToRecord(recordId) {
-    this._conversation.setActiveRecord(recordId);
-    const rec = this._conversation.getActiveRecord();
-    if (!rec) return;
+    // Look up the record before committing to the switch
+    const group = this._conversation.getActiveGroup();
+    const rec = group?.records.find(r => r.id === recordId);
 
-    if (rec.messages.length > 0) {
-      this._ui.renderHistoryMessages(rec.getApiMessages(), this._activeTabId);
+    // If the record belongs to a different URL, ask the user what to do
+    if (rec?.pageUrl && this._activeTabUrl && !_pageKeysMatch(rec.pageUrl, this._activeTabUrl)) {
+      this._ui.showUrlMismatchDialog(
+        rec,
+        this._activeTabUrl,
+        // onNew — create a fresh record for the current URL
+        () => {
+          this._conversation.newRecord(this._activeTabUrl, this._activeTabTitle);
+          const welcome = this._ui.renderWelcome(this._presets);
+          this._bindQuickPrompts(welcome);
+        },
+        // onLoad — import the record and turn on Sync Page
+        () => {
+          this._conversation.setActiveRecord(recordId);
+          const loaded = this._conversation.getActiveRecord();
+          if (loaded?.messages.length > 0) {
+            this._ui.renderHistoryMessages(loaded.getApiMessages(), this._activeTabId);
+          } else {
+            const welcome = this._ui.renderWelcome(this._presets);
+            this._bindQuickPrompts(welcome);
+          }
+          this._ui.setSyncPage(true);
+        }
+      );
+      return;
+    }
+
+    // URLs match (or record has no URL stored) — switch normally
+    this._conversation.setActiveRecord(recordId);
+    const loaded = this._conversation.getActiveRecord();
+    if (!loaded) return;
+
+    if (loaded.messages.length > 0) {
+      this._ui.renderHistoryMessages(loaded.getApiMessages(), this._activeTabId);
     } else {
       const welcome = this._ui.renderWelcome(this._presets);
       this._bindQuickPrompts(welcome);
@@ -295,6 +332,11 @@ export class SidePanelController {
     const historySnapshot = this._conversation.getApiMessages();
     const syncPage = this._ui.getSyncPage();
 
+    // Snapshot mutable references at send-time so tab switches during streaming
+    // don't redirect save/render to the wrong record or tab.
+    const sendRecord = this._conversation.getActiveRecord();
+    const sendTabId  = this._activeTabId;
+
     this._ui.addMessage("user", instruction, false, 0, selectedText);
     const { contentEl } = this._ui.addMessage("assistant", "", true);
 
@@ -306,12 +348,13 @@ export class SidePanelController {
         this._ui.setStreamingContent(contentEl, accumulated);
       } else if (msg.type === "STREAM_DONE") {
         const finalText = msg.fullText || accumulated;
-        this._ui.setFinalContent(contentEl, finalText, this._activeTabId);
+        this._ui.setFinalContent(contentEl, finalText, sendTabId);
 
-        this._conversation.push("user", instruction);
-        this._conversation.push("assistant", finalText);
+        sendRecord.push("user", instruction);
+        sendRecord.push("assistant", finalText);
+        this._conversation.requestSave();
 
-        // If history view is open, keep it in sync (auto-title set on first push)
+        // If history view is open and still showing the same origin, keep it in sync
         if (this._ui.isHistoryViewVisible()) {
           const group = this._conversation.getActiveGroup();
           if (group) this._ui.renderHistoryView(group);
@@ -321,10 +364,11 @@ export class SidePanelController {
       } else if (msg.type === "STREAM_ABORTED") {
         const partialText = msg.partialText || accumulated;
         if (partialText) {
-          this._ui.setFinalContent(contentEl, partialText, this._activeTabId);
+          this._ui.setFinalContent(contentEl, partialText, sendTabId);
           this._ui.appendAbortNote(contentEl, msg.reason);
-          this._conversation.push("user", instruction);
-          this._conversation.push("assistant", partialText);
+          sendRecord.push("user", instruction);
+          sendRecord.push("assistant", partialText);
+          this._conversation.requestSave();
         } else {
           this._ui.setErrorContent(contentEl, msg.reason === "timeout" ? "Request timed out (2 min limit)." : "Request cancelled.");
         }
@@ -455,4 +499,13 @@ export class SidePanelController {
     this._ui.hideNoBanner();
     this._ui.profileDropdown.classList.add("hidden");
   }
+}
+
+/** Compare two URLs by origin+pathname only (ignoring query/hash) */
+function _pageKeysMatch(urlA, urlB) {
+  const key = (url) => {
+    try { const u = new URL(url); return u.origin + u.pathname; }
+    catch { return url; }
+  };
+  return key(urlA) === key(urlB);
 }

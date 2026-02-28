@@ -6,6 +6,7 @@ export class SidePanelUI {
 
     // DOM refs
     this.messagesEl      = document.getElementById("messages");
+    this._bindLinkInterception();
     this.instructionEl   = document.getElementById("instruction");
     this.sendBtn         = document.getElementById("sendBtn");
     this.clearBtn        = document.getElementById("clearBtn");
@@ -25,6 +26,7 @@ export class SidePanelUI {
     this.historyViewList   = document.getElementById("historyViewList");
     this.historyBackBtn    = document.getElementById("historyBackBtn");
     this.historyNewBtn     = document.getElementById("historyNewBtn");
+    this.historyViewAllBtn = document.getElementById("historyViewAllBtn");
     this.historyViewOrigin = document.getElementById("historyViewOrigin");
   }
 
@@ -114,6 +116,70 @@ export class SidePanelUI {
   /** Returns true if the user wants page content re-sent on every message */
   getSyncPage() {
     return this.syncPageToggle?.checked ?? false;
+  }
+
+  /** Programmatically set the Sync Page toggle */
+  setSyncPage(val) {
+    if (this.syncPageToggle) this.syncPageToggle.checked = val;
+  }
+
+  // ── URL mismatch dialog ───────────────────────────────────────────────────
+
+  /**
+   * Show a modal asking the user what to do when the selected history record
+   * belongs to a different URL than the current tab.
+   * @param {import("./ChatRecord.js").ChatRecord} rec
+   * @param {string} currentUrl
+   * @param {function} onNew   — user chose "New conversation"
+   * @param {function} onLoad  — user chose "Load anyway"
+   */
+  showUrlMismatchDialog(rec, currentUrl, onNew, onLoad) {
+    document.getElementById("urlMismatchDialog")?.remove();
+
+    const recLabel  = _urlLabel(rec.pageUrl);
+    const curLabel  = _urlLabel(currentUrl);
+
+    const overlay = document.createElement("div");
+    overlay.id = "urlMismatchDialog";
+    overlay.className = "dialog-overlay";
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <div class="dialog-title">⚠ 页面不同</div>
+        <div class="dialog-body">
+          <div class="dialog-row">
+            <span class="dialog-label">历史记录页面</span>
+            <span class="dialog-url" title="${escHtml(rec.pageUrl)}">${escHtml(recLabel)}</span>
+          </div>
+          <div class="dialog-row">
+            <span class="dialog-label">当前页面</span>
+            <span class="dialog-url" title="${escHtml(currentUrl)}">${escHtml(curLabel)}</span>
+          </div>
+          <p class="dialog-hint">该对话来自不同的页面。是否新建对话，或直接导入历史记录并开启 Sync Page？</p>
+        </div>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn-ghost" id="dialogBtnCancel">取消</button>
+          <button class="dialog-btn dialog-btn-secondary" id="dialogBtnNew">新建对话</button>
+          <button class="dialog-btn dialog-btn-primary" id="dialogBtnLoad">直接导入</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("dialogBtnCancel").addEventListener("click", () => overlay.remove());
+    document.getElementById("dialogBtnNew").addEventListener("click", () => {
+      overlay.remove();
+      onNew();
+    });
+    document.getElementById("dialogBtnLoad").addEventListener("click", () => {
+      overlay.remove();
+      onLoad();
+    });
+
+    // Clicking the backdrop also cancels
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
   }
 
   // ── Profile badge & dropdown ──────────────────────────────────────────────
@@ -455,6 +521,81 @@ export class SidePanelUI {
     }
   }
 
+  // ── Link interception ────────────────────────────────────────────────────
+
+  _bindLinkInterception() {
+    // messagesEl is not yet in the DOM at this point — use document-level
+    // delegation and filter by ancestry later, OR wire up after DOM is ready.
+    // We defer to the next microtask so the constructor finishes first.
+    document.addEventListener("click", (e) => {
+      const anchor = e.target.closest("a[href]");
+      if (!anchor) return;
+      // Only intercept links inside the messages panel
+      if (!this.messagesEl?.contains(anchor)) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href || !/^https?:\/\//i.test(href)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      this.showLinkConfirmDialog(href, () => {
+        chrome.tabs.create({ url: href });
+      });
+    });
+  }
+
+  /**
+   * Show a confirmation dialog before opening an external URL.
+   * @param {string}   url
+   * @param {function} onConfirm
+   */
+  showLinkConfirmDialog(url, onConfirm) {
+    document.getElementById("linkConfirmDialog")?.remove();
+
+    let displayUrl;
+    try {
+      const u = new URL(url);
+      displayUrl = u.hostname + (u.pathname.length > 1 ? u.pathname : "") + (u.search || "");
+    } catch {
+      displayUrl = url;
+    }
+    if (displayUrl.length > 60) displayUrl = displayUrl.slice(0, 59) + "…";
+
+    const overlay = document.createElement("div");
+    overlay.id = "linkConfirmDialog";
+    overlay.className = "dialog-overlay";
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <div class="dialog-title">🔗 即将打开链接</div>
+        <div class="dialog-body">
+          <div class="dialog-row">
+            <span class="dialog-label">目标地址</span>
+            <span class="dialog-url" title="${escHtml(url)}">${escHtml(displayUrl)}</span>
+          </div>
+          <p class="dialog-hint">该链接来自 AI 回复，将在新标签页中打开。</p>
+        </div>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn-secondary" id="linkBtnCancel">取消</button>
+          <button class="dialog-btn dialog-btn-primary" id="linkBtnOpen">打开</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("linkBtnCancel").addEventListener("click", () => overlay.remove());
+    document.getElementById("linkBtnOpen").addEventListener("click", () => {
+      overlay.remove();
+      onConfirm();
+    });
+
+    // Clicking the backdrop also cancels
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   _scrollToBottom() {
@@ -472,6 +613,18 @@ function escHtml(str) {
 
 function shorten(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
+}
+
+/** Show hostname + pathname, truncated for display */
+function _urlLabel(url) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.length > 1 ? u.pathname : "";
+    const full = u.hostname + path;
+    return full.length > 50 ? full.slice(0, 49) + "…" : full;
+  } catch {
+    return url.length > 50 ? url.slice(0, 49) + "…" : url;
+  }
 }
 
 function relativeDate(ts) {
