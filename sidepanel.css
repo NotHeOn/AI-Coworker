@@ -136,6 +136,8 @@ body {
 }
 
 /* ── Messages ── */
+.messages.hidden { display: none; }
+
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -760,6 +762,168 @@ cite.citation-chip:hover {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ── Full-screen history view ── */
+.history-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.history-view.hidden { display: none; }
+
+.history-view-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.history-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s;
+}
+
+.history-back-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.history-view-origin {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.history-new-btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.history-new-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.history-view-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.history-view-list::-webkit-scrollbar { width: 4px; }
+.history-view-list::-webkit-scrollbar-track { background: transparent; }
+.history-view-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.history-record-row {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-left: 2px solid transparent;
+}
+
+.history-record-row:hover { background: rgba(255,255,255,0.04); }
+
+.history-record-active {
+  border-left-color: var(--accent);
+  background: rgba(124, 106, 255, 0.08);
+}
+
+.history-record-active:hover { background: rgba(124, 106, 255, 0.13); }
+
+.history-record-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-record-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-record-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-record-date {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.history-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.history-record-row:hover .history-delete-btn { opacity: 1; }
+.history-delete-btn:hover { background: rgba(248,113,113,0.15); color: var(--error); }
+
+/* History button hidden on restricted pages */
+#historyBtn.hidden { display: none; }
+
+/* History button active state */
+#historyBtn.active {
+  background: rgba(124, 106, 255, 0.15);
+  color: var(--accent);
 }
 
 /* ── Tab status variants ── */

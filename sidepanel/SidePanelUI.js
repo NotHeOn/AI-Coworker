@@ -18,6 +18,14 @@ export class SidePanelUI {
     this.selectionChipEl         = document.getElementById("selectionChip");
     this.selectionChipTextEl     = document.getElementById("selectionChipText");
     this.selectionChipDismissEl  = document.getElementById("selectionChipDismiss");
+
+    // History view refs
+    this.historyBtn        = document.getElementById("historyBtn");
+    this.historyView       = document.getElementById("historyView");
+    this.historyViewList   = document.getElementById("historyViewList");
+    this.historyBackBtn    = document.getElementById("historyBackBtn");
+    this.historyNewBtn     = document.getElementById("historyNewBtn");
+    this.historyViewOrigin = document.getElementById("historyViewOrigin");
   }
 
   // ── Selection chip ────────────────────────────────────────────────────────
@@ -369,6 +377,84 @@ export class SidePanelUI {
     this.charCountEl.style.color = len > 1800 ? "var(--error)" : "var(--text-muted)";
   }
 
+  // ── History view ──────────────────────────────────────────────────────────
+
+  showHistoryView(group) {
+    this.messagesEl.classList.add("hidden");
+    this.historyView.classList.remove("hidden");
+    this.historyBtn.classList.add("active");
+    if (group) this.renderHistoryView(group);
+  }
+
+  hideHistoryView() {
+    this.historyView.classList.add("hidden");
+    this.messagesEl.classList.remove("hidden");
+    this.historyBtn.classList.remove("active");
+  }
+
+  isHistoryViewVisible() {
+    return !this.historyView.classList.contains("hidden");
+  }
+
+  renderHistoryView(group) {
+    if (!group) return;
+    this.historyViewOrigin.textContent = group.displayName;
+    this.historyViewList.innerHTML = "";
+
+    if (group.records.length === 0) {
+      this.historyViewList.innerHTML = `<div style="padding:20px 14px;font-size:12px;color:var(--text-muted);text-align:center">No conversations yet.</div>`;
+      return;
+    }
+
+    const sorted = [...group.records].sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const rec of sorted) {
+      const isActive = rec.id === group.activeRecordId;
+      const row = document.createElement("div");
+      row.className = `history-record-row${isActive ? " history-record-active" : ""}`;
+      row.dataset.recordId = rec.id;
+
+      const infoEl = document.createElement("div");
+      infoEl.className = "history-record-info";
+
+      const titleEl = document.createElement("span");
+      titleEl.className = "history-record-title";
+      titleEl.textContent = rec.title;
+
+      const msgCount = rec.messages.length;
+      const metaEl = document.createElement("span");
+      metaEl.className = "history-record-meta";
+      metaEl.textContent = `${Math.floor(msgCount / 2)} message${Math.floor(msgCount / 2) !== 1 ? "s" : ""}`;
+
+      infoEl.appendChild(titleEl);
+      infoEl.appendChild(metaEl);
+
+      const dateEl = document.createElement("span");
+      dateEl.className = "history-record-date";
+      dateEl.textContent = relativeDate(rec.updatedAt);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "history-delete-btn";
+      deleteBtn.dataset.deleteRecordId = rec.id;
+      deleteBtn.title = "Delete conversation";
+      deleteBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>`;
+
+      row.appendChild(infoEl);
+      row.appendChild(dateEl);
+      row.appendChild(deleteBtn);
+      this.historyViewList.appendChild(row);
+    }
+  }
+
+  setHistoryDisabled(disabled) {
+    if (disabled) {
+      this.historyBtn.classList.add("hidden");
+      // Close history view if it was open
+      this.hideHistoryView();
+    } else {
+      this.historyBtn.classList.remove("hidden");
+    }
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   _scrollToBottom() {
@@ -386,4 +472,13 @@ function escHtml(str) {
 
 function shorten(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
+}
+
+function relativeDate(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60_000)   return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }

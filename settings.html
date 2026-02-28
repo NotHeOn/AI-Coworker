@@ -296,6 +296,102 @@
     }
 
     .preset-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    /* ── Chat History section ── */
+    .history-group {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .history-group-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.12s;
+    }
+
+    .history-group-header:hover { background: var(--surface2); }
+
+    .history-group-chevron {
+      font-size: 10px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: transform 0.15s;
+    }
+
+    .history-group-chevron.open { transform: rotate(90deg); }
+
+    .history-group-name {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-group-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .history-group-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    .history-group-records {
+      border-top: 1px solid var(--border);
+      display: none;
+    }
+
+    .history-group-records.open { display: block; }
+
+    .history-rec-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .history-rec-row:last-child { border-bottom: none; }
+
+    .history-rec-title {
+      flex: 1;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-rec-url {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      max-width: 140px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+
+    .history-rec-date {
+      font-size: 10px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -389,6 +485,11 @@
           <div class="status" id="presetStatus"></div>
         </div>
       </div>
+    </div>
+    <!-- ── Chat History section ── -->
+    <div class="section-title">Chat History</div>
+    <div id="chatHistorySection">
+      <div class="empty-state" id="chatHistoryEmpty" style="display:none">No chat history yet.</div>
     </div>
   </div>
 
