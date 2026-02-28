@@ -208,6 +208,11 @@ export class ExtensionController {
           fullText += chunk;
           chrome.runtime.sendMessage({ type: "STREAM_CHUNK", chunk }).catch(() => {});
         }
+      } catch (streamErr) {
+        // AbortError is thrown when the signal fires mid-read; re-throw everything else
+        if (streamErr.name !== "AbortError" && !abortController.signal.aborted) {
+          throw streamErr;
+        }
       } finally {
         clearTimeout(timeoutId);
         this._activeAbort = null;
@@ -222,11 +227,8 @@ export class ExtensionController {
         chrome.runtime.sendMessage({ type: "STREAM_DONE", fullText }).catch(() => {});
       }
     } catch (err) {
-      clearTimeout?.(); // belt-and-suspenders (timeoutId scoped above, but catch is outside)
       this._activeAbort = null;
-      if (err.name === "AbortError" || this._activeAbort?.signal?.aborted) {
-        // Already handled above via finally branch — ignore duplicate
-      } else {
+      if (err.name !== "AbortError") {
         console.error("[AI Coworker] ANALYZE error:", err);
         chrome.runtime.sendMessage({ type: "STREAM_ERROR", error: err.message }).catch(() => {});
       }
