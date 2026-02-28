@@ -49,6 +49,7 @@ async function init() {
   presets = data.presets || DEFAULT_PRESETS.map(p => ({ ...p }));
   renderProfiles();
   renderPresets();
+  await loadChatHistory();
 }
 
 init();
@@ -328,4 +329,112 @@ function shortUrl(url) {
   } catch {
     return url;
   }
+}
+
+// ── Chat History ──────────────────────────────────────────────────────────────
+
+const chatHistorySectionEl = document.getElementById("chatHistorySection");
+const chatHistoryEmptyEl   = document.getElementById("chatHistoryEmpty");
+
+async function loadChatHistory() {
+  const data = await chrome.storage.local.get("chatGroups");
+  const groups = data.chatGroups ?? {};
+  renderChatHistory(groups);
+}
+
+function renderChatHistory(groups) {
+  // Remove previously rendered group cards (keep the empty-state div)
+  chatHistorySectionEl.querySelectorAll(".history-group").forEach(el => el.remove());
+
+  const origins = Object.keys(groups);
+  chatHistoryEmptyEl.style.display = origins.length === 0 ? "" : "none";
+
+  for (const origin of origins) {
+    const group = groups[origin];
+    const records = group.records ?? [];
+    const displayName = group.displayName || origin;
+
+    const card = document.createElement("div");
+    card.className = "history-group";
+
+    card.innerHTML = `
+      <div class="history-group-header">
+        <span class="history-group-chevron">▶</span>
+        <span class="history-group-name" title="${escHtml(origin)}">${escHtml(displayName)}</span>
+        <span class="history-group-meta">${records.length} conversation${records.length !== 1 ? "s" : ""}</span>
+        <div class="history-group-actions">
+          <button class="btn-sm danger" data-delete-group="${escHtml(origin)}">Delete All</button>
+        </div>
+      </div>
+      <div class="history-group-records">
+        ${records.length === 0 ? '<div style="padding:10px 16px;font-size:12px;color:var(--text-muted)">No conversations.</div>' :
+          records.map(rec => `
+            <div class="history-rec-row">
+              <span class="history-rec-title" title="${escHtml(rec.title)}">${escHtml(rec.title)}</span>
+              <span class="history-rec-url" title="${escHtml(rec.pageUrl)}">${escHtml(shortUrl(rec.pageUrl))}</span>
+              <span class="history-rec-date">${fmtDate(rec.updatedAt)}</span>
+              <div class="history-group-actions">
+                <button class="btn-sm danger" data-delete-record="${escHtml(origin)}" data-record-id="${escHtml(rec.id)}">Delete</button>
+              </div>
+            </div>
+          `).join("")
+        }
+      </div>
+    `;
+
+    // Toggle collapse
+    const header = card.querySelector(".history-group-header");
+    const chevron = card.querySelector(".history-group-chevron");
+    const recordsEl = card.querySelector(".history-group-records");
+    header.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return; // don't toggle when clicking action buttons
+      const isOpen = recordsEl.classList.contains("open");
+      recordsEl.classList.toggle("open", !isOpen);
+      chevron.classList.toggle("open", !isOpen);
+    });
+
+    // Delete group
+    card.querySelector("[data-delete-group]")?.addEventListener("click", async () => {
+      if (!confirm(`Delete all chat history for ${displayName}?`)) return;
+      await deleteChatGroup(origin);
+    });
+
+    // Delete individual records
+    card.querySelectorAll("[data-delete-record]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const recordId = btn.dataset.recordId;
+        await deleteChatRecord(origin, recordId);
+      });
+    });
+
+    chatHistorySectionEl.appendChild(card);
+  }
+}
+
+async function deleteChatGroup(origin) {
+  const data = await chrome.storage.local.get("chatGroups");
+  const groups = data.chatGroups ?? {};
+  delete groups[origin];
+  await chrome.storage.local.set({ chatGroups: groups });
+  renderChatHistory(groups);
+}
+
+async function deleteChatRecord(origin, recordId) {
+  const data = await chrome.storage.local.get("chatGroups");
+  const groups = data.chatGroups ?? {};
+  if (!groups[origin]) return;
+  groups[origin].records = (groups[origin].records ?? []).filter(r => r.id !== recordId);
+  if (groups[origin].records.length === 0) {
+    delete groups[origin];
+  } else if (groups[origin].activeRecordId === recordId) {
+    groups[origin].activeRecordId = groups[origin].records[groups[origin].records.length - 1]?.id ?? null;
+  }
+  await chrome.storage.local.set({ chatGroups: groups });
+  renderChatHistory(groups);
+}
+
+function fmtDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
 }

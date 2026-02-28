@@ -13,6 +13,7 @@ export class ExtensionController {
     this._systemPromptBuilder = new SystemPromptBuilder();
     this._tabManager = new TabManager();
     this._activeAbort = null; // AbortController for the in-flight stream
+    this._selections = new Map(); // tabId → selected text
   }
 
   init() {
@@ -62,6 +63,10 @@ export class ExtensionController {
         break;
       case "SCROLL_TO_ANCHOR":
         this._handleScrollToAnchor(message, sendResponse);
+        break;
+      case "SELECTION_CHANGED":
+        this._handleSelectionChanged(message, sender);
+        sendResponse({ ok: true });
         break;
       case "CONTENT_INVALIDATED":
         this._handleContentInvalidated(sender);
@@ -121,7 +126,7 @@ export class ExtensionController {
     }
   }
 
-  async _handleAnalyze({ tabId, instruction, history, syncPage }, sendResponse) {
+  async _handleAnalyze({ tabId, instruction, history, syncPage, selectedText }, sendResponse) {
     sendResponse({ ok: true }); // Ack immediately; results come via broadcast messages
 
     const isFirstMessage = !(history?.length);
@@ -175,9 +180,14 @@ export class ExtensionController {
 
       // Build message list: history (previous turns) + current user turn
       const messages = [...(history || [])];
+      const selectionNote = selectedText
+        ? `\n\nSelected text from page:\n> ${selectedText}`
+        : "";
       const userContent = hasContent
-        ? `Here is the current page content:\n\n---\n${contentData.markdown}\n---\n\nMy instruction: ${instruction}`
-        : instruction;
+        ? `Here is the current page content:\n\n---\n${contentData.markdown}\n---\n${selectionNote}\n\nMy instruction: ${instruction}`
+        : selectedText
+          ? `${selectionNote}\n\nMy instruction: ${instruction}`
+          : instruction;
       messages.push({ role: "user", content: userContent });
       console.log(`[AI Coworker] ANALYZE sending ${messages.length} message(s) to API`);
 
@@ -260,6 +270,17 @@ export class ExtensionController {
     } catch (e) {
       sendResponse({ error: e.message });
     }
+  }
+
+  _handleSelectionChanged({ text }, sender) {
+    if (!sender?.tab?.id) return;
+    const tabId = sender.tab.id;
+    if (text) {
+      this._selections.set(tabId, text);
+    } else {
+      this._selections.delete(tabId);
+    }
+    chrome.runtime.sendMessage({ type: "SELECTION_CHANGED", text, tabId }).catch(() => {});
   }
 
   _handleContentInvalidated(sender) {

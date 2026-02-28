@@ -302,3 +302,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 });
+
+// ── SelectionWatcher ──────────────────────────────────────────────────────────
+
+(function initSelectionWatcher() {
+  let _lastSent = "";
+  let _debounceTimer = null;
+
+  document.addEventListener("selectionchange", () => {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(() => {
+      const text = window.getSelection().toString().trim();
+      if (text === _lastSent) return;
+      _lastSent = text;
+      chrome.runtime.sendMessage({ type: "SELECTION_CHANGED", text }).catch(() => {});
+    }, 400);
+  });
+})();
