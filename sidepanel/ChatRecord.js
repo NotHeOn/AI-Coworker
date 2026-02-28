@@ -1,23 +1,18 @@
 export class ChatRecord {
   constructor({ id, title, pageUrl, pageTitle, messages = [], createdAt, updatedAt } = {}) {
     this.id        = id        ?? `rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    this.title     = title     ?? "New conversation";
     this.pageUrl   = pageUrl   ?? "";
     this.pageTitle = pageTitle ?? "";
     this.messages  = messages; // [{ role, content, timestamp }]
     this.createdAt = createdAt ?? Date.now();
     this.updatedAt = updatedAt ?? this.createdAt;
+    // Use stored title for existing records; generate from pageTitle+time for new ones
+    this.title     = title ?? _defaultTitle(this.pageTitle, this.createdAt);
   }
 
   push(role, content) {
     this.messages.push({ role, content, timestamp: Date.now() });
     this.updatedAt = Date.now();
-
-    // Auto-title from the first user message
-    if (role === "user" && this.messages.filter(m => m.role === "user").length === 1) {
-      const raw = content.trim().replace(/\s+/g, " ");
-      this.title = raw.length > 30 ? raw.slice(0, 30) + "…" : raw;
-    }
   }
 
   truncateTo(n) {
@@ -50,4 +45,14 @@ export class ChatRecord {
   static deserialize(obj) {
     return new ChatRecord(obj);
   }
+}
+
+/** Build default record title: "{pageTitle}_{HH:MM}", or just "{HH:MM}" if no title */
+function _defaultTitle(pageTitle, ts) {
+  const d    = new Date(ts);
+  const hh   = String(d.getHours()).padStart(2, "0");
+  const mm   = String(d.getMinutes()).padStart(2, "0");
+  const time = `${hh}:${mm}`;
+  const p    = (pageTitle || "").trim();
+  return p ? `${p}_${time}` : time;
 }

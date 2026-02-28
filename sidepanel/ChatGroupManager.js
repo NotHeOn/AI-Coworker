@@ -55,6 +55,11 @@ export class ChatGroupManager {
     this._saveTimer = setTimeout(() => this._save(), SAVE_DEBOUNCE_MS);
   }
 
+  /** Public: schedule a debounced save (for pushing directly to a record object) */
+  requestSave() {
+    this._debouncedSave();
+  }
+
   // ── Tab lifecycle ───────────────────────────────────────────────────────────
 
   /**
