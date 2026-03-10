@@ -405,6 +405,56 @@ body {
 .message-content a { color: var(--accent); text-decoration: none; }
 .message-content a:hover { text-decoration: underline; }
 
+/* ── Tables in message content ── */
+.message-content table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.message-content thead tr {
+  background: rgba(124, 106, 255, 0.12);
+  border-bottom: 2px solid rgba(124, 106, 255, 0.3);
+}
+
+.message-content th {
+  padding: 7px 11px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.message-content td {
+  padding: 6px 11px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  min-width: 60px;
+}
+
+.message-content tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.message-content tbody tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.message-content tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.message-content tbody tr:nth-child(even):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* Cursor blink during stream */
 .cursor {
   display: inline-block;
@@ -685,6 +735,25 @@ textarea#instruction::-webkit-scrollbar-thumb { background: var(--border); }
 .char-count {
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.queue-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.queue-badge.hidden {
+  display: none;
+}
+
+.message.assistant.queued .message-content {
+  opacity: 0.5;
+  font-style: italic;
 }
 
 /* ── Loading dots ── */

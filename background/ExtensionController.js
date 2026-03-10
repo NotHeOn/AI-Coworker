@@ -1,18 +1,21 @@
-import { ProfileManager } from "./ProfileManager.js";
+import { ModelManager } from "./ModelManager.js";
+import { ProviderManager } from "./ProviderManager.js";
 import { PresetManager } from "./PresetManager.js";
 import { SystemPromptBuilder } from "./SystemPromptBuilder.js";
 import { ModelClientFactory } from "./ModelClientFactory.js";
 import { TabManager } from "./TabManager.js";
+import { RequestQueue } from "./RequestQueue.js";
 
 const STREAM_TIMEOUT_MS = 120_000; // 2 minutes
 
 export class ExtensionController {
   constructor() {
-    this._profileManager = new ProfileManager();
+    this._modelManager = new ModelManager();
+    this._providerManager = new ProviderManager();
     this._presetManager = new PresetManager();
     this._systemPromptBuilder = new SystemPromptBuilder();
     this._tabManager = new TabManager();
-    this._activeAbort = null; // AbortController for the in-flight stream
+    this._queue = new RequestQueue(this._runAnalyze.bind(this));
     this._selections = new Map(); // tabId → selected text
   }
 
@@ -38,6 +41,11 @@ export class ExtensionController {
       }
     });
 
+    // Cancel all queued/running requests when a tab closes
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      this._queue.cancelAll(tabId);
+    });
+
     // Single listener routes all messages — avoids competing sendResponse callers
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this._route(message, sender, sendResponse);
@@ -58,6 +66,9 @@ export class ExtensionController {
       case "GET_ACTIVE_PROFILE":
         this._handleGetActiveProfile(sendResponse);
         break;
+      case "GET_PROVIDERS":
+        this._handleGetProviders(sendResponse);
+        break;
       case "ANALYZE":
         this._handleAnalyze(message, sendResponse);
         break;
@@ -76,11 +87,14 @@ export class ExtensionController {
         this._handleGetPageContent(message, sendResponse);
         break;
       case "ABORT_STREAM":
-        if (this._activeAbort) {
-          console.log("[AI Coworker] ABORT_STREAM received — aborting");
-          this._activeAbort.abort("user");
-        }
+        this._queue.cancel(
+          message.tabId ?? this._tabManager.getActive()?.id,
+          message.itemId ?? null
+        );
         sendResponse({ ok: true });
+        break;
+      case "GET_QUEUE_STATE":
+        sendResponse({ items: this._queue.getQueue(message.tabId) });
         break;
       case "SETTINGS_UPDATED":
         // Re-broadcast so sidepanel refreshes profile/preset state
@@ -119,119 +133,127 @@ export class ExtensionController {
 
   async _handleGetActiveProfile(sendResponse) {
     try {
-      const profile = await this._profileManager.getActive();
-      sendResponse({ profile });
+      const active = await this._modelManager.getActive();
+      // Expose a flattened profile-like object for sidepanel compatibility
+      sendResponse({ profile: active ? { ...active.profile, _provider: active.provider, _modelId: active.modelId } : null });
     } catch (e) {
       sendResponse({ error: e.message });
     }
   }
 
-  async _handleAnalyze({ tabId, instruction, history, syncPage, selectedText }, sendResponse) {
-    sendResponse({ ok: true }); // Ack immediately; results come via broadcast messages
+  async _handleGetProviders(sendResponse) {
+    try {
+      const providers = await this._providerManager.getAll();
+      sendResponse({ providers });
+    } catch (e) {
+      sendResponse({ error: e.message });
+    }
+  }
 
+  /** Enqueue an ANALYZE request — execution is handled by _runAnalyze via RequestQueue. */
+  _handleAnalyze({ tabId, instruction, history, syncPage, selectedText, recordId, itemId }, sendResponse) {
+    sendResponse({ ok: true }); // Ack immediately; results come via broadcast messages
+    this._queue.enqueue({
+      itemId:       itemId ?? `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tabId,
+      instruction,
+      history:      history ?? [],
+      syncPage:     !!syncPage,
+      selectedText: selectedText ?? "",
+      recordId:     recordId ?? null
+    });
+  }
+
+  /** Execute one queue item — called by RequestQueue._executeItem. */
+  async _runAnalyze(item) {
+    const { itemId, tabId, instruction, history, syncPage, selectedText } = item;
     const isFirstMessage = !(history?.length);
-    // Fetch content on the first message of a conversation, OR whenever syncPage is on
     const shouldFetchContent = isFirstMessage || !!syncPage;
     console.log(`[AI Coworker] ANALYZE start — tabId=${tabId ?? "none"}, history=${history?.length ?? 0} turns, syncPage=${!!syncPage}, shouldFetch=${shouldFetchContent}, instruction="${instruction.slice(0, 80)}"`);
 
+    const active = await this._modelManager.getActive();
+    if (!active) {
+      console.warn("[AI Coworker] ANALYZE aborted — no active profile");
+      chrome.runtime.sendMessage({
+        type: "STREAM_ERROR", tabId, itemId,
+        error: "No profile configured. Please open Settings to add a model profile."
+      }).catch(() => {});
+      return;
+    }
+    const { profile, provider, modelId } = active;
+    console.log(`[AI Coworker] ANALYZE using profile "${profile.name}" (${provider.baseUrl}, model=${modelId})`);
+
+    let contentData = null;
+    if (shouldFetchContent) {
+      const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
+      if (!tab) {
+        console.warn(`[AI Coworker] ANALYZE — no tab found for tabId=${tabId}`);
+      }
+      contentData = tab ? await tab.getContent() : null;
+      console.log(`[AI Coworker] ANALYZE content: hasContent=${!!(contentData?.markdown)}, chars=${contentData?.markdown?.length ?? 0}, anchors=${Object.keys(contentData?.anchorMap || {}).length}`);
+    } else {
+      console.log(`[AI Coworker] ANALYZE content: skipped (follow-up turn, syncPage=off)`);
+    }
+
+    const hasContent = !!(contentData?.markdown);
+
+    if (shouldFetchContent && !hasContent) {
+      const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
+      const reason = !tab
+        ? "No tab found"
+        : contentData?.title === "Restricted page"
+          ? "Restricted page"
+          : "Could not read page — try reloading the tab";
+      console.warn(`[AI Coworker] ANALYZE content unavailable: ${reason}`);
+      chrome.runtime.sendMessage({ type: "CONTENT_UNAVAILABLE", tabId, reason }).catch(() => {});
+    }
+
+    const systemPromptHasContent = hasContent || !isFirstMessage;
+    const systemPrompt = this._systemPromptBuilder.build(systemPromptHasContent);
+
+    const messages = [...(history || [])];
+    const selectionNote = selectedText
+      ? `\n\nSelected text from page:\n> ${selectedText}`
+      : "";
+    const userContent = hasContent
+      ? `Here is the current page content:\n\n---\n${contentData.markdown}\n---\n${selectionNote}\n\nMy instruction: ${instruction}`
+      : selectedText
+        ? `${selectionNote}\n\nMy instruction: ${instruction}`
+        : instruction;
+    messages.push({ role: "user", content: userContent });
+    console.log(`[AI Coworker] ANALYZE sending ${messages.length} message(s) to API`);
+
+    const abortController = item.abortController;
+
+    // 2-minute hard timeout
+    const timeoutId = setTimeout(() => {
+      console.warn("[AI Coworker] ANALYZE timeout after 2 minutes");
+      abortController.abort("timeout");
+    }, STREAM_TIMEOUT_MS);
+
+    const client = ModelClientFactory.create({ provider, modelId });
+    let fullText = "";
+
     try {
-      const profile = await this._profileManager.getActive();
-      if (!profile) {
-        console.warn("[AI Coworker] ANALYZE aborted — no active profile");
-        chrome.runtime.sendMessage({
-          type: "STREAM_ERROR",
-          error: "No profile configured. Please open Settings to add a model profile."
-        }).catch(() => {});
-        return;
+      for await (const chunk of client.stream(systemPrompt, messages, abortController.signal)) {
+        fullText += chunk;
+        chrome.runtime.sendMessage({ type: "STREAM_CHUNK", tabId, itemId, chunk }).catch(() => {});
       }
-      console.log(`[AI Coworker] ANALYZE using profile "${profile.name}" (${profile.baseUrl})`);
-
-      // Only fetch page content when needed (first turn, or syncPage toggle is on)
-      let contentData = null;
-      if (shouldFetchContent) {
-        const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
-        if (!tab) {
-          console.warn(`[AI Coworker] ANALYZE — no tab found for tabId=${tabId}, active=${this._tabManager.getActive()?.id}`);
-        }
-        contentData = tab ? await tab.getContent() : null;
-        console.log(`[AI Coworker] ANALYZE content: hasContent=${!!(contentData?.markdown)}, chars=${contentData?.markdown?.length ?? 0}, anchors=${Object.keys(contentData?.anchorMap || {}).length}`);
-      } else {
-        console.log(`[AI Coworker] ANALYZE content: skipped (follow-up turn, syncPage=off)`);
+    } catch (streamErr) {
+      if (streamErr.name !== "AbortError" && !abortController.signal.aborted) {
+        throw streamErr;
       }
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
-      const hasContent = !!(contentData?.markdown);
-
-      if (shouldFetchContent && !hasContent) {
-        // Notify sidepanel so it can update the context bar
-        const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
-        const reason = !tab
-          ? "No tab found"
-          : contentData?.title === "Restricted page"
-            ? "Restricted page"
-            : "Could not read page — try reloading the tab";
-        console.warn(`[AI Coworker] ANALYZE content unavailable: ${reason}`);
-        chrome.runtime.sendMessage({ type: "CONTENT_UNAVAILABLE", reason }).catch(() => {});
-      }
-
-      // System prompt: declare "has content" if content is in this message OR if history
-      // already contains context from the first turn (model can still reference it).
-      const systemPromptHasContent = hasContent || !isFirstMessage;
-      const systemPrompt = this._systemPromptBuilder.build(systemPromptHasContent);
-
-      // Build message list: history (previous turns) + current user turn
-      const messages = [...(history || [])];
-      const selectionNote = selectedText
-        ? `\n\nSelected text from page:\n> ${selectedText}`
-        : "";
-      const userContent = hasContent
-        ? `Here is the current page content:\n\n---\n${contentData.markdown}\n---\n${selectionNote}\n\nMy instruction: ${instruction}`
-        : selectedText
-          ? `${selectionNote}\n\nMy instruction: ${instruction}`
-          : instruction;
-      messages.push({ role: "user", content: userContent });
-      console.log(`[AI Coworker] ANALYZE sending ${messages.length} message(s) to API`);
-
-      const abortController = new AbortController();
-      this._activeAbort = abortController;
-
-      // 2-minute hard timeout
-      const timeoutId = setTimeout(() => {
-        console.warn("[AI Coworker] ANALYZE timeout after 2 minutes");
-        abortController.abort("timeout");
-      }, STREAM_TIMEOUT_MS);
-
-      const client = ModelClientFactory.create(profile);
-      let fullText = "";
-
-      try {
-        for await (const chunk of client.stream(systemPrompt, messages, abortController.signal)) {
-          fullText += chunk;
-          chrome.runtime.sendMessage({ type: "STREAM_CHUNK", chunk }).catch(() => {});
-        }
-      } catch (streamErr) {
-        // AbortError is thrown when the signal fires mid-read; re-throw everything else
-        if (streamErr.name !== "AbortError" && !abortController.signal.aborted) {
-          throw streamErr;
-        }
-      } finally {
-        clearTimeout(timeoutId);
-        this._activeAbort = null;
-      }
-
-      if (abortController.signal.aborted) {
-        const reason = abortController.signal.reason === "timeout" ? "timeout" : "user";
-        console.log(`[AI Coworker] ANALYZE aborted (${reason}) — partial ${fullText.length} chars`);
-        chrome.runtime.sendMessage({ type: "STREAM_ABORTED", reason, partialText: fullText }).catch(() => {});
-      } else {
-        console.log(`[AI Coworker] ANALYZE done — response ${fullText.length} chars`);
-        chrome.runtime.sendMessage({ type: "STREAM_DONE", fullText }).catch(() => {});
-      }
-    } catch (err) {
-      this._activeAbort = null;
-      if (err.name !== "AbortError") {
-        console.error("[AI Coworker] ANALYZE error:", err);
-        chrome.runtime.sendMessage({ type: "STREAM_ERROR", error: err.message }).catch(() => {});
-      }
+    if (abortController.signal.aborted) {
+      const reason = abortController.signal.reason === "timeout" ? "timeout" : "user";
+      console.log(`[AI Coworker] ANALYZE aborted (${reason}) — partial ${fullText.length} chars`);
+      chrome.runtime.sendMessage({ type: "STREAM_ABORTED", tabId, itemId, reason, partialText: fullText }).catch(() => {});
+    } else {
+      console.log(`[AI Coworker] ANALYZE done — response ${fullText.length} chars`);
+      chrome.runtime.sendMessage({ type: "STREAM_DONE", tabId, itemId, fullText }).catch(() => {});
     }
   }
 

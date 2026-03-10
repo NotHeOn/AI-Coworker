@@ -1,10 +1,10 @@
-import { ChatRecord } from "./ChatRecord.js";
+import { Conversation } from "./Conversation.js";
 
-export class ChatGroup {
+export class SiteHistory {
   constructor({ origin, displayName, records = [], activeRecordId = null } = {}) {
     this.origin        = origin;
     this.displayName   = displayName ?? (() => { try { return new URL(origin).hostname; } catch { return origin; } })();
-    this.records       = records.map(r => r instanceof ChatRecord ? r : ChatRecord.deserialize(r));
+    this.records       = records.map(r => r instanceof Conversation ? r : Conversation.deserialize(r));
     this.activeRecordId = activeRecordId ?? (this.records[this.records.length - 1]?.id ?? null);
   }
 
@@ -13,7 +13,7 @@ export class ChatGroup {
   }
 
   newRecord(pageUrl, pageTitle) {
-    const rec = new ChatRecord({ pageUrl, pageTitle });
+    const rec = new Conversation({ pageUrl, pageTitle });
     this.records.push(rec);
     this.activeRecordId = rec.id;
     return rec;
@@ -37,14 +37,14 @@ export class ChatGroup {
 
   serialize() {
     return {
-      origin:        this.origin,
-      displayName:   this.displayName,
+      origin:         this.origin,
+      displayName:    this.displayName,
       activeRecordId: this.activeRecordId,
-      records:       this.records.map(r => r.serialize())
+      records:        this.records.map(r => r.serialize())
     };
   }
 
   static deserialize(obj) {
-    return new ChatGroup(obj);
+    return new SiteHistory(obj);
   }
 }

@@ -1,19 +1,20 @@
-import { ChatGroupManager } from "./ChatGroupManager.js";
+import { ConversationStore } from "./ConversationStore.js";
 import { SidePanelUI } from "./SidePanelUI.js";
+import { RequestQueueView } from "./RequestQueueView.js";
 
 export class SidePanelController {
   constructor() {
     this._ui = new SidePanelUI();
-    this._conversation = new ChatGroupManager();
+    this._conversation = new ConversationStore();
+    this._requestQueue = new RequestQueueView();
 
-    this._isStreaming = false;
-    this._activeTabId = null;
-    this._activeTabUrl = "";
+    this._activeTabId    = null;
+    this._activeTabUrl   = "";
     this._activeTabTitle = "";
-    this._profiles = [];
+    this._profiles       = [];
     this._activeProfileId = null;
-    this._presets = [];
-    this._selectedText = "";
+    this._presets        = [];
+    this._selectedText   = "";
   }
 
   async init() {
@@ -29,17 +30,27 @@ export class SidePanelController {
 
     // Apply tab info and seed conversation manager
     if (tabInfo && !tabInfo.error) {
-      this._activeTabId = tabInfo.id;
-      this._activeTabUrl = tabInfo.url ?? "";
+      this._activeTabId    = tabInfo.id;
+      this._activeTabUrl   = tabInfo.url ?? "";
       this._activeTabTitle = tabInfo.title ?? "";
       this._ui.updateTabStatus(tabInfo);
       this._setActiveTab(tabInfo.id, tabInfo.url, tabInfo.title);
     }
 
+    // Restore queue state in case the sidepanel was rebuilt while items were queued
+    if (this._activeTabId) {
+      const queueRes = await chrome.runtime.sendMessage({
+        type: "GET_QUEUE_STATE",
+        tabId: this._activeTabId
+      });
+      this._requestQueue.onQueueUpdated(queueRes?.items ?? []);
+      this._ui.updateQueueState(this._requestQueue);
+    }
+
     // Apply presets, render initial welcome screen (if no existing messages)
     this._presets = presetsRes?.presets || [];
     const activeRec = this._conversation.getActiveRecord();
-    if (activeRec && activeRec.messages.length > 0) {
+    if (activeRec && activeRec.hasContent()) {
       this._ui.renderHistoryMessages(activeRec.getApiMessages(), this._activeTabId);
     } else {
       const welcome = this._ui.renderWelcome(this._presets);
@@ -86,7 +97,7 @@ export class SidePanelController {
     const ui = this._ui;
 
     ui.sendBtn.addEventListener("click", () => {
-      if (this._isStreaming) {
+      if (this._requestQueue.isRunning()) {
         this._abortCurrentStream();
       } else {
         this.send();
@@ -94,7 +105,7 @@ export class SidePanelController {
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this._isStreaming) {
+      if (e.key === "Escape" && this._requestQueue.isRunning()) {
         this._abortCurrentStream();
       }
     });
@@ -197,7 +208,7 @@ export class SidePanelController {
       const editBtn = e.target.closest(".edit-msg-btn");
       if (!editBtn) return;
       const msgEl = editBtn.closest(".message.user");
-      if (msgEl && !this._isStreaming) {
+      if (msgEl && !this._requestQueue.isRunning()) {
         this._handleEditMessage(msgEl);
       }
     });
@@ -206,7 +217,6 @@ export class SidePanelController {
   // ── Record switching & deletion ───────────────────────────────────────────
 
   _switchToRecord(recordId) {
-    // Look up the record before committing to the switch
     const group = this._conversation.getActiveGroup();
     const rec = group?.records.find(r => r.id === recordId);
 
@@ -225,7 +235,7 @@ export class SidePanelController {
         () => {
           this._conversation.setActiveRecord(recordId);
           const loaded = this._conversation.getActiveRecord();
-          if (loaded?.messages.length > 0) {
+          if (loaded?.hasContent()) {
             this._ui.renderHistoryMessages(loaded.getApiMessages(), this._activeTabId);
           } else {
             const welcome = this._ui.renderWelcome(this._presets);
@@ -242,7 +252,7 @@ export class SidePanelController {
     const loaded = this._conversation.getActiveRecord();
     if (!loaded) return;
 
-    if (loaded.messages.length > 0) {
+    if (loaded.hasContent()) {
       this._ui.renderHistoryMessages(loaded.getApiMessages(), this._activeTabId);
     } else {
       const welcome = this._ui.renderWelcome(this._presets);
@@ -260,7 +270,7 @@ export class SidePanelController {
     // If we deleted the active record, re-render chat to reflect the new active one
     if (wasActive) {
       const rec = this._conversation.getActiveRecord();
-      if (rec && rec.messages.length > 0) {
+      if (rec && rec.hasContent()) {
         this._ui.renderHistoryMessages(rec.getApiMessages(), this._activeTabId);
       } else {
         const welcome = this._ui.renderWelcome(this._presets);
@@ -273,7 +283,6 @@ export class SidePanelController {
     if (updatedGroup) {
       this._ui.renderHistoryView(updatedGroup);
     } else {
-      // All records deleted — close history view
       this._ui.hideHistoryView();
     }
   }
@@ -289,7 +298,7 @@ export class SidePanelController {
   }
 
   _resendFromEdit(msgEl, newText) {
-    if (!newText || this._isStreaming) return;
+    if (!newText || this._requestQueue.isRunning()) return;
 
     const allMessages = [...this._ui.messagesEl.querySelectorAll(".message")];
     const domIndex = allMessages.indexOf(msgEl);
@@ -318,64 +327,81 @@ export class SidePanelController {
 
   async send() {
     const instruction = this._ui.instructionEl.value.trim();
-    if (!instruction || this._isStreaming) return;
+    if (!instruction) return;
 
     const selectedText = this._selectedText;
     this._selectedText = "";
     this._ui.hideSelectionChip();
 
-    this._isStreaming = true;
-    this._ui.setStreaming(true);
     this._ui.instructionEl.value = "";
     this._ui.updateCharCount();
-
-    const historySnapshot = this._conversation.getApiMessages();
-    const syncPage = this._ui.getSyncPage();
 
     // Snapshot mutable references at send-time so tab switches during streaming
     // don't redirect save/render to the wrong record or tab.
     const sendRecord = this._conversation.getActiveRecord();
     const sendTabId  = this._activeTabId;
+    const itemId     = `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+    // Snapshot history before reserving the slot (slot is not yet in messages)
+    const historySnapshot = this._conversation.getApiMessages();
+    const syncPage = this._ui.getSyncPage();
+
+    // Reserve the insertion slot so order is preserved if items complete out of order
+    if (sendRecord) {
+      this._conversation.reserveSlot(sendRecord.id, itemId);
+    }
+
+    // Optimistic UI — show bubbles immediately
     this._ui.addMessage("user", instruction, false, 0, selectedText);
-    const { contentEl } = this._ui.addMessage("assistant", "", true);
+    const { contentEl } = this._ui.addMessage("assistant", "", true, sendTabId, "", itemId);
 
+    // Register a one-time stream listener scoped to this item
     let accumulated = "";
 
     const onStream = (msg) => {
+      // Ignore messages for other tabs or items
+      if (msg.tabId !== sendTabId) return;
+      if (msg.itemId && msg.itemId !== itemId) return;
+
       if (msg.type === "STREAM_CHUNK") {
         accumulated += msg.chunk;
         this._ui.setStreamingContent(contentEl, accumulated);
+
       } else if (msg.type === "STREAM_DONE") {
         const finalText = msg.fullText || accumulated;
         this._ui.setFinalContent(contentEl, finalText, sendTabId);
 
-        sendRecord.push("user", instruction);
-        sendRecord.push("assistant", finalText);
-        this._conversation.requestSave();
+        if (sendRecord) {
+          this._conversation.fillSlot(itemId, instruction, finalText);
+        }
 
-        // If history view is open and still showing the same origin, keep it in sync
         if (this._ui.isHistoryViewVisible()) {
           const group = this._conversation.getActiveGroup();
           if (group) this._ui.renderHistoryView(group);
         }
 
-        this._doneStreaming(onStream);
+        chrome.runtime.onMessage.removeListener(onStream);
+
       } else if (msg.type === "STREAM_ABORTED") {
         const partialText = msg.partialText || accumulated;
         if (partialText) {
           this._ui.setFinalContent(contentEl, partialText, sendTabId);
           this._ui.appendAbortNote(contentEl, msg.reason);
-          sendRecord.push("user", instruction);
-          sendRecord.push("assistant", partialText);
-          this._conversation.requestSave();
+          if (sendRecord) {
+            this._conversation.fillSlot(itemId, instruction, partialText);
+          }
         } else {
-          this._ui.setErrorContent(contentEl, msg.reason === "timeout" ? "Request timed out (2 min limit)." : "Request cancelled.");
+          this._ui.setErrorContent(contentEl, msg.reason === "timeout"
+            ? "Request timed out (2 min limit)."
+            : "Request cancelled.");
+          if (sendRecord) this._conversation.cancelSlot(itemId);
         }
-        this._doneStreaming(onStream);
+        chrome.runtime.onMessage.removeListener(onStream);
+
       } else if (msg.type === "STREAM_ERROR") {
         this._ui.setErrorContent(contentEl, msg.error);
-        this._doneStreaming(onStream);
+        if (sendRecord) this._conversation.cancelSlot(itemId);
+        chrome.runtime.onMessage.removeListener(onStream);
       }
     };
 
@@ -383,23 +409,22 @@ export class SidePanelController {
 
     chrome.runtime.sendMessage({
       type: "ANALYZE",
-      tabId: this._activeTabId,
+      tabId: sendTabId,
+      itemId,
       instruction,
       history: historySnapshot,
       syncPage,
-      selectedText
+      selectedText,
+      recordId: sendRecord?.id ?? null
     });
   }
 
-  _doneStreaming(listenerFn) {
-    chrome.runtime.onMessage.removeListener(listenerFn);
-    this._isStreaming = false;
-    this._ui.setStreaming(false);
-    this._ui.instructionEl.focus();
-  }
-
   _abortCurrentStream() {
-    chrome.runtime.sendMessage({ type: "ABORT_STREAM" }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type:   "ABORT_STREAM",
+      tabId:  this._activeTabId,
+      itemId: this._requestQueue.getRunningItemId()
+    }).catch(() => {});
   }
 
   _openContentPreview() {
@@ -430,13 +455,19 @@ export class SidePanelController {
           }
         }
         break;
+      case "QUEUE_UPDATED":
+        if (msg.tabId === this._activeTabId) {
+          this._requestQueue.onQueueUpdated(msg.items);
+          this._ui.updateQueueState(this._requestQueue);
+        }
+        break;
     }
   }
 
   _onTabChanged(tabInfo) {
     const newTabId = tabInfo.id;
-    this._activeTabId = newTabId;
-    this._activeTabUrl = tabInfo.url ?? "";
+    this._activeTabId    = newTabId;
+    this._activeTabUrl   = tabInfo.url ?? "";
     this._activeTabTitle = tabInfo.title ?? "";
     this._ui.updateTabStatus(tabInfo);
 
@@ -445,8 +476,15 @@ export class SidePanelController {
 
     this._setActiveTab(newTabId, tabInfo.url, tabInfo.title);
 
+    // Reset queue view for the new tab
+    chrome.runtime.sendMessage({ type: "GET_QUEUE_STATE", tabId: newTabId })
+      .then(res => {
+        this._requestQueue.onQueueUpdated(res?.items ?? []);
+        this._ui.updateQueueState(this._requestQueue);
+      }).catch(() => {});
+
     const rec = this._conversation.getActiveRecord();
-    if (rec && rec.messages.length > 0) {
+    if (rec && rec.hasContent()) {
       this._ui.renderHistoryMessages(rec.getApiMessages(), newTabId);
     } else {
       const welcome = this._ui.renderWelcome(this._presets);
@@ -460,10 +498,8 @@ export class SidePanelController {
   }
 
   async _onChatGroupsStorageChanged(newValue) {
-    // Reload in-memory groups from the new storage value
     await this._conversation.load();
 
-    // If history view is open, re-render it so deletions from Settings are reflected
     if (this._ui.isHistoryViewVisible()) {
       const group = this._conversation.getActiveGroup();
       if (group) {
