@@ -28,6 +28,9 @@ export class SidePanelUI {
     this.historyNewBtn     = document.getElementById("historyNewBtn");
     this.historyViewAllBtn = document.getElementById("historyViewAllBtn");
     this.historyViewOrigin = document.getElementById("historyViewOrigin");
+
+    // Queue badge
+    this.queueBadgeEl = document.getElementById("queueBadge");
   }
 
   // ── Selection chip ────────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ export class SidePanelUI {
   /**
    * Show a modal asking the user what to do when the selected history record
    * belongs to a different URL than the current tab.
-   * @param {import("./ChatRecord.js").ChatRecord} rec
+   * @param {import("./Conversation.js").Conversation} rec
    * @param {string} currentUrl
    * @param {function} onNew   — user chose "New conversation"
    * @param {function} onLoad  — user chose "Load anyway"
@@ -204,7 +207,7 @@ export class SidePanelUI {
       row.innerHTML = `
         ${profile.id === activeProfileId ? '<span class="dropdown-check">✓</span>' : '<span class="dropdown-check"></span>'}
         <span class="dropdown-name">${escHtml(profile.name)}</span>
-        <span class="dropdown-model">${escHtml(profile.modelName)}</span>
+        <span class="dropdown-model">${escHtml(profile.modelId || profile.modelName || "")}</span>
       `;
       row.addEventListener("click", () => onSelect(profile.id));
       this.profileDropdown.appendChild(row);
@@ -246,12 +249,17 @@ export class SidePanelUI {
    * @param {number}  tabId        used to bind citation chip clicks (0 = no citations)
    * @param {string}  selectedText optional selected text attached to a user message
    */
-  addMessage(role, content, isLoading = false, tabId = 0, selectedText = "") {
+  addMessage(role, content, isLoading = false, tabId = 0, selectedText = "", itemId = null) {
     // Remove welcome screen on first real message
     this.messagesEl.querySelector(".welcome")?.remove();
 
     const msgEl = document.createElement("div");
     msgEl.className = `message ${role}`;
+
+    // Tag assistant bubbles with itemId so stream chunks can target the right element
+    if (role === "assistant" && itemId) {
+      msgEl.dataset.itemId = itemId;
+    }
 
     if (role === "user") {
       // Store raw text for edit feature
@@ -410,6 +418,21 @@ export class SidePanelUI {
     this._scrollToBottom();
   }
 
+  // ── Queue state ───────────────────────────────────────────────────────────
+
+  /** Update the send button and queue badge to reflect current queue state. */
+  updateQueueState(queueView) {
+    const queued  = queueView.getQueuedCount();
+    const running = queueView.isRunning();
+
+    this.setStreaming(running);
+
+    if (this.queueBadgeEl) {
+      this.queueBadgeEl.textContent = queued > 0 ? `${queued} queued` : "";
+      this.queueBadgeEl.classList.toggle("hidden", queued === 0);
+    }
+  }
+
   // ── Input controls ────────────────────────────────────────────────────────
 
   setStreaming(isStreaming) {
@@ -486,7 +509,7 @@ export class SidePanelUI {
       titleEl.className = "history-record-title";
       titleEl.textContent = rec.title;
 
-      const msgCount = rec.messages.length;
+      const msgCount = rec.messages.filter(m => m.content !== null).length;
       const metaEl = document.createElement("span");
       metaEl.className = "history-record-meta";
       metaEl.textContent = `${Math.floor(msgCount / 2)} message${Math.floor(msgCount / 2) !== 1 ? "s" : ""}`;

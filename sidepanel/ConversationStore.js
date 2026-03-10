@@ -1,14 +1,15 @@
-import { ChatGroup } from "./ChatGroup.js";
+import { SiteHistory } from "./SiteHistory.js";
 
 const STORAGE_KEY = "chatGroups";
 const SAVE_DEBOUNCE_MS = 200;
 
-export class ChatGroupManager {
+export class ConversationStore {
   constructor() {
-    this._groups       = new Map();  // origin → ChatGroup
+    this._groups       = new Map();  // origin → SiteHistory
     this._activeOrigin = null;
     this._tabOriginMap = new Map();  // tabId → origin (transient)
     this._saveTimer    = null;
+    this._pendingSlots = new Map();  // itemId → { recordId, index }
   }
 
   // ── Persistence ────────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ export class ChatGroupManager {
     const data = await chrome.storage.local.get(STORAGE_KEY);
     const raw  = data[STORAGE_KEY] ?? {};
     for (const [origin, obj] of Object.entries(raw)) {
-      this._groups.set(origin, ChatGroup.deserialize({ ...obj, origin }));
+      this._groups.set(origin, SiteHistory.deserialize({ ...obj, origin }));
     }
   }
 
@@ -38,9 +39,15 @@ export class ChatGroupManager {
   _save() {
     const obj = {};
     for (const [origin, group] of this._groups) {
-      const ser = group.serialize();
-      ser.records = ser.records.filter(r => r.messages && r.messages.length > 0);
-      if (ser.records.length === 0) continue;
+      // Filter on live Conversation instances before serialising
+      const liveRecords = group.records.filter(r => r.hasContent());
+      if (liveRecords.length === 0) continue;
+      const ser = {
+        origin:         group.origin,
+        displayName:    group.displayName,
+        activeRecordId: group.activeRecordId,
+        records:        liveRecords.map(r => r.serialize())
+      };
       // Fix activeRecordId if it pointed to a now-excluded empty record
       if (!ser.records.find(r => r.id === ser.activeRecordId)) {
         ser.activeRecordId = ser.records[ser.records.length - 1]?.id ?? null;
@@ -88,13 +95,13 @@ export class ChatGroupManager {
     this._activeOrigin = origin;
 
     if (!this._groups.has(origin)) {
-      this._groups.set(origin, new ChatGroup({ origin }));
+      this._groups.set(origin, new SiteHistory({ origin }));
     }
     const group = this._groups.get(origin);
 
     // Drop all records that were never used (empty message list).
     // These are placeholder stubs from pages visited without chatting.
-    const emptyIds = group.records.filter(r => r.messages.length === 0).map(r => r.id);
+    const emptyIds = group.records.filter(r => r.isEmpty()).map(r => r.id);
     for (const id of emptyIds) group.deleteRecord(id);
 
     // Find the most recently updated record whose pageUrl matches this URL
@@ -134,14 +141,57 @@ export class ChatGroupManager {
 
   truncateTo(n) {
     const rec = this.getActiveRecord();
-    if (rec) {
-      rec.truncateTo(n);
-      this._debouncedSave();
+    if (!rec) return;
+    rec.truncateTo(n);
+    // Clear any pending slots whose insertion index is at or beyond the cut point
+    for (const [itemId, slot] of this._pendingSlots) {
+      if (slot.recordId === rec.id && slot.index >= n) {
+        this._pendingSlots.delete(itemId);
+      }
     }
+    this._debouncedSave();
   }
 
   getApiMessages() {
     return this.getActiveRecord()?.getApiMessages() ?? [];
+  }
+
+  // ── Queue write channel ────────────────────────────────────────────────────
+
+  /**
+   * Reserve insertion positions for an in-flight queue item.
+   * Called at send-time; nothing is written to messages yet.
+   */
+  reserveSlot(recordId, itemId) {
+    const rec = this._findRecord(recordId);
+    if (!rec) return;
+    this._pendingSlots.set(itemId, { recordId, index: rec.messages.length });
+  }
+
+  /**
+   * Fill a reserved slot once the stream completes.
+   * Inserts user + assistant messages at the pre-reserved index to preserve order.
+   */
+  fillSlot(itemId, userText, assistantText) {
+    const slot = this._pendingSlots.get(itemId);
+    if (!slot) return;
+    const rec = this._findRecord(slot.recordId);
+    if (!rec) { this._pendingSlots.delete(itemId); return; }
+    const now = Date.now();
+    rec.messages.splice(slot.index, 0,
+      { role: "user",      content: userText,      timestamp: now },
+      { role: "assistant", content: assistantText, timestamp: now }
+    );
+    rec.updatedAt = now;
+    this._pendingSlots.delete(itemId);
+    this._debouncedSave();
+  }
+
+  /**
+   * Discard a reserved slot without writing (stream cancelled before completion).
+   */
+  cancelSlot(itemId) {
+    this._pendingSlots.delete(itemId);
   }
 
   // ── Record management ───────────────────────────────────────────────────────
@@ -197,6 +247,16 @@ export class ChatGroupManager {
   async renameGroup(origin, displayName) {
     const group = this._groups.get(origin);
     if (group) { group.displayName = displayName; await this._save(); }
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  _findRecord(recordId) {
+    for (const group of this._groups.values()) {
+      const rec = group.records.find(r => r.id === recordId);
+      if (rec) return rec;
+    }
+    return null;
   }
 }
 

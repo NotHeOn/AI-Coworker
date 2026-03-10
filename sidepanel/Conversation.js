@@ -1,4 +1,4 @@
-export class ChatRecord {
+export class Conversation {
   constructor({ id, title, pageUrl, pageTitle, messages = [], createdAt, updatedAt } = {}) {
     this.id        = id        ?? `rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.pageUrl   = pageUrl   ?? "";
@@ -20,9 +20,20 @@ export class ChatRecord {
     this.updatedAt = Date.now();
   }
 
-  /** Strip timestamps — returns plain [{role,content}] for the API */
+  /** True if there are no completed messages (null-content slots are excluded) */
+  isEmpty() {
+    return this.messages.filter(m => m.content !== null).length === 0;
+  }
+
+  hasContent() {
+    return !this.isEmpty();
+  }
+
+  /** Strip timestamps and null slots — returns plain [{role,content}] for the API */
   getApiMessages() {
-    return this.messages.map(({ role, content }) => ({ role, content }));
+    return this.messages
+      .filter(m => m.content !== null)
+      .map(({ role, content }) => ({ role, content }));
   }
 
   rename(title) {
@@ -43,7 +54,7 @@ export class ChatRecord {
   }
 
   static deserialize(obj) {
-    return new ChatRecord(obj);
+    return new Conversation(obj);
   }
 }
 

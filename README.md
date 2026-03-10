@@ -7,10 +7,11 @@ A Chrome side-panel extension that reads the current page and lets you chat with
 ## Features
 
 - **Side panel UI** — stays open while you browse; no popup needed
-- **Multi-provider profiles** — add as many model profiles as you like (Anthropic Claude, OpenAI, Ollama, or any OpenAI-compatible endpoint)
+- **Provider + Profile system** — define providers once (name, API type, base URL, API key); create lightweight profiles that reference a provider and pick a model; switch between them from the side panel dropdown
+- **Auto model discovery** — click "Fetch Models" in Settings to pull the live model list from any provider and choose from a dropdown
 - **Page-aware context** — automatically extracts the page's readable content and sends it with your message
 - **Inline citations** — the AI can reference specific paragraphs (`[§p-3]`); clicking a citation scrolls the page to that element
-- **Streaming responses** — token-by-token output with a stop button (Esc or click)
+- **Streaming responses** — token-by-token output with a stop button (Esc or click); messages sent while a response is streaming are queued and executed in order; a badge shows how many are waiting
 - **Persistent chat history** — conversations are saved per URL and restored automatically when you return to a page; switching between `a.com/hello` and `a.com/pricing` keeps separate histories; records are named `{PageTitle}_{HH:MM}` by default
 - **History view** — click the clock icon to browse, load, or delete past conversations for the current domain; **View All** opens the full history in Settings
 - **Cross-page history import** — loading a record from a different URL prompts you to start a new conversation or import it directly (auto-enables Sync Page)
@@ -36,22 +37,32 @@ A Chrome side-panel extension that reads the current page and lets you chat with
 
 ## Configuration
 
+### Providers
+
+A **Provider** holds the connection details for one API endpoint. Add it once, reuse it across many profiles.
+
+| Field | Example |
+|---|---|
+| Name | `Anthropic` |
+| API Type | `Anthropic` or `OpenAI-compatible` |
+| Base URL | `https://api.anthropic.com/v1` |
+| API Key | `sk-ant-...` |
+
+Supported endpoints: Anthropic, OpenAI, **Ollama** (`http://localhost:11434/v1`), OpenRouter, Together AI, or any OpenAI-compatible host.
+
+After saving a provider, click **Fetch Models** to pull the live model list and cache it locally.
+
 ### Model Profiles
 
-Each profile needs:
+A **Profile** references a provider and selects a specific model. This keeps credentials in one place while letting you switch models instantly.
 
 | Field | Example |
 |---|---|
 | Name | `Claude Sonnet` |
-| Base URL | `https://api.anthropic.com` |
-| Model name | `claude-sonnet-4-5` |
-| API key | `sk-ant-...` |
+| Provider | *(select from saved providers)* |
+| Model | `claude-sonnet-4-6` *(dropdown or manual ID)* |
 
-The API type is detected automatically:
-- URL contains `anthropic.com` → Anthropic Messages API
-- Anything else → OpenAI-compatible (`/chat/completions`)
-
-This means you can point it at **Ollama** (`http://localhost:11434`), **OpenRouter**, **Together AI**, or any other OpenAI-compatible host.
+> **Backward compatibility** — profiles created before the Provider system (with a flat Base URL / Model Name / API Key) continue to work without any migration.
 
 ### Presets
 
@@ -86,18 +97,22 @@ Chrome Extension/
 ├── background/
 │   ├── AnthropicClient.js     # Streaming client for Anthropic API
 │   ├── OpenAIClient.js        # Streaming client for OpenAI-compatible APIs
-│   ├── ModelClientFactory.js  # Selects client based on profile baseUrl
-│   ├── ProfileManager.js      # CRUD for model profiles in chrome.storage
+│   ├── ModelClientFactory.js  # Selects client based on provider.type
+│   ├── ModelManager.js        # Resolves active profile → {profile, provider, modelId}
+│   ├── ProviderManager.js     # CRUD for providers; fetchModels(); model list cache
+│   ├── ProfileManager.js      # (legacy, superseded by ModelManager)
 │   ├── PresetManager.js       # CRUD for quick-prompt presets
+│   ├── RequestQueue.js        # Per-tab FIFO queue for AI requests; enables same-tab queuing and cross-tab parallelism
 │   ├── SystemPromptBuilder.js # Builds system prompt with citation rules
 │   ├── Tab.js                 # Tab state + lazy content cache
 │   ├── TabManager.js          # Tracks open tabs
-│   ├── ExtensionController.js # Central message router
+│   ├── ExtensionController.js # Central message router + stream orchestrator
 │   └── sseParser.js           # Async generator for SSE streams
 └── sidepanel/
-    ├── ChatRecord.js          # Single conversation thread; title defaults to {pageTitle}_{HH:MM}
-    ├── ChatGroup.js           # All records for one origin
-    ├── ChatGroupManager.js    # Persistent history manager; URL-based record matching
+    ├── Conversation.js        # Single conversation thread; title defaults to {pageTitle}_{HH:MM}
+    ├── SiteHistory.js         # All conversations for one origin (domain)
+    ├── ConversationStore.js   # Persistent store; URL-based record matching; queue write channel
+    ├── RequestQueueView.js    # Read-only UI mirror of the background RequestQueue
     ├── CitationRenderer.js    # Parses [§id] anchors → clickable chips
     ├── SidePanelUI.js         # All DOM operations
     └── SidePanelController.js # Coordinates UI ↔ background messaging
