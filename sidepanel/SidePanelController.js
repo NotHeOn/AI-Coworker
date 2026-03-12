@@ -66,9 +66,12 @@ export class SidePanelController {
     // Listen for background broadcasts
     chrome.runtime.onMessage.addListener((msg) => this._onMessage(msg));
 
-    // Sync when Settings page modifies chatGroups
+    // Sync when Settings page modifies chatGroups.
+    // Skip changes we triggered ourselves (fillSlot saves, etc.) to avoid
+    // load() wiping _pendingSlots for other in-flight requests.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local" || !changes.chatGroups) return;
+      if (this._conversation.consumeOwnSave()) return;
       this._onChatGroupsStorageChanged(changes.chatGroups.newValue ?? {});
     });
 
@@ -359,8 +362,21 @@ export class SidePanelController {
     let accumulated = "";
 
     const onStream = (msg) => {
-      // Ignore messages for other tabs or items
+      // Ignore messages for other tabs
       if (msg.tabId !== sendTabId) return;
+
+      // Detect cancellation of a queued (not-yet-running) item:
+      // STREAM_* events will never arrive for it, so QUEUE_UPDATED is the
+      // only signal that the item is gone.
+      if (msg.type === "QUEUE_UPDATED") {
+        if (!msg.items.some(i => i.itemId === itemId)) {
+          chrome.runtime.onMessage.removeListener(onStream);
+          if (sendRecord) this._conversation.cancelSlot(itemId);
+          this._ui.setErrorContent(contentEl, "Request cancelled.");
+        }
+        return;
+      }
+
       if (msg.itemId && msg.itemId !== itemId) return;
 
       if (msg.type === "STREAM_CHUNK") {
