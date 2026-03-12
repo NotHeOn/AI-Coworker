@@ -10,6 +10,7 @@ export class ConversationStore {
     this._tabOriginMap = new Map();  // tabId → origin (transient)
     this._saveTimer    = null;
     this._pendingSlots = new Map();  // itemId → { recordId, index }
+    this._ownSaveCount = 0;          // tracks self-initiated saves to suppress storage.onChanged reload
   }
 
   // ── Persistence ────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ export class ConversationStore {
    * Groups with no non-empty records are skipped entirely.
    */
   _save() {
+    this._ownSaveCount++;
     const obj = {};
     for (const [origin, group] of this._groups) {
       // Filter on live Conversation instances before serialising
@@ -60,6 +62,18 @@ export class ConversationStore {
   _debouncedSave() {
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => this._save(), SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * Returns true (and decrements counter) if the latest storage.onChanged
+   * event was caused by our own save — so the caller can skip reloading.
+   */
+  consumeOwnSave() {
+    if (this._ownSaveCount > 0) {
+      this._ownSaveCount--;
+      return true;
+    }
+    return false;
   }
 
   /** Public: schedule a debounced save (for pushing directly to a record object) */
@@ -165,7 +179,12 @@ export class ConversationStore {
   reserveSlot(recordId, itemId) {
     const rec = this._findRecord(recordId);
     if (!rec) return;
-    this._pendingSlots.set(itemId, { recordId, index: rec.messages.length });
+    // Each already-reserved slot for this record will eventually splice 2 messages
+    // (user + assistant). Offset by that amount so rapid successive sends land in
+    // the correct order even before any slot is filled.
+    const pendingPairs = [...this._pendingSlots.values()]
+      .filter(s => s.recordId === recordId).length;
+    this._pendingSlots.set(itemId, { recordId, index: rec.messages.length + pendingPairs * 2 });
   }
 
   /**

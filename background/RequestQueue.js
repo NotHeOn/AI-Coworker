@@ -104,6 +104,12 @@ export class RequestQueue {
       item.status = "done";
     } catch (err) {
       item.status = "error";
+      chrome.runtime.sendMessage({
+        type:  "STREAM_ERROR",
+        tabId:  item.tabId,
+        itemId: item.itemId,
+        error:  err?.message || "An unexpected error occurred."
+      }).catch(() => {});
     } finally {
       // Dequeue this item regardless of outcome
       const queue = this._queues.get(item.tabId);
