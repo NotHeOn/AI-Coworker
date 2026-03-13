@@ -1,4 +1,4 @@
-// Standalone preview page — shows the exact content that will be sent to the AI.
+// Standalone preview page — shows the raw page content that would be sent to the AI.
 
 const params  = new URLSearchParams(location.search);
 const tabId   = parseInt(params.get("tabId"), 10) || null;
@@ -105,7 +105,7 @@ function buildContentView(markdown) {
   const rawBtn  = el("button", "toolbar-btn active");
   rawBtn.textContent  = "Raw";
   const hlBtn   = el("button", "toolbar-btn");
-  hlBtn.textContent   = "Highlights anchors";
+  hlBtn.textContent   = "Highlight anchors";
 
   const spacer = el("span", "toolbar-spacer");
 

@@ -332,6 +332,8 @@ body {
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .message.user .message-content {
@@ -385,6 +387,8 @@ body {
   padding: 10px 12px;
   overflow-x: auto;
   margin: 8px 0;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .message-content pre code {
@@ -539,6 +543,23 @@ textarea#instruction::-webkit-scrollbar-thumb { background: var(--border); }
 .send-btn:disabled { background: var(--border); cursor: not-allowed; }
 .send-btn.stop-mode { background: var(--error); }
 .send-btn.stop-mode:hover { background: #e05555; }
+
+.preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.preview-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--surface2); }
+.preview-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ── Selection chip ── */
 .selection-chip {

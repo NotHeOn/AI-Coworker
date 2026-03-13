@@ -1,4 +1,4 @@
-import { ExtensionController } from "./background/ExtensionController.js";
+import { MessageRouter } from "./background/MessageRouter.js";
 
-const controller = new ExtensionController();
-controller.init();
+const router = new MessageRouter();
+router.init();

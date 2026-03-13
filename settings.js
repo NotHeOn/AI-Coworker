@@ -28,7 +28,7 @@ const PROVIDER_PRESETS = {
   ollama: { name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", modelName: "llama3" }
 };
 
-// Default prompt presets — keep in sync with background/PresetManager.js
+// Default prompt presets — keep in sync with background/PresetStore.js
 const DEFAULT_PRESETS = [
   { id: "preset-summarize", label: "Summarize", prompt: "Summarize this page in 3 bullet points." },
   { id: "preset-keypoints", label: "Key Points", prompt: "What are the key takeaways from this page?" },

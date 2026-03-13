@@ -9,6 +9,7 @@ export class SidePanelUI {
     this._bindLinkInterception();
     this.instructionEl   = document.getElementById("instruction");
     this.sendBtn         = document.getElementById("sendBtn");
+    this.previewBtn      = document.getElementById("previewBtn");
     this.clearBtn        = document.getElementById("clearBtn");
     this.settingsBtn     = document.getElementById("settingsBtn");
     this.contextTextEl   = document.getElementById("contextText");

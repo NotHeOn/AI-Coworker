@@ -1,28 +1,24 @@
 import { SiteHistory } from "./SiteHistory.js";
 
 const STORAGE_KEY = "chatGroups";
-const SAVE_DEBOUNCE_MS = 200;
 
+/**
+ * ConversationStore — read-only in-memory cache of chatGroups.
+ *
+ * All writes (fillSlot, truncate, etc.) are now handled by HistoryStore
+ * in the background service worker. This store reloads from storage when
+ * chrome.storage.onChanged fires.
+ */
 export class ConversationStore {
   constructor() {
     this._groups       = new Map();  // origin → SiteHistory
     this._activeOrigin = null;
     this._tabOriginMap = new Map();  // tabId → origin (transient)
-    this._saveTimer    = null;
-    this._pendingSlots = new Map();  // itemId → { recordId, index }
-    this._ownSaveCount = 0;          // tracks self-initiated saves to suppress storage.onChanged reload
   }
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
   async load() {
-    // Flush any pending debounced write so we don't lose recent messages
-    if (this._saveTimer) {
-      clearTimeout(this._saveTimer);
-      this._saveTimer = null;
-      await this._save();
-    }
-
     this._groups.clear();
     const data = await chrome.storage.local.get(STORAGE_KEY);
     const raw  = data[STORAGE_KEY] ?? {};
@@ -33,15 +29,13 @@ export class ConversationStore {
 
   /**
    * Persist groups to storage.
-   * Empty records (messages.length === 0) are intentionally excluded —
-   * they represent pages the user opened but never chatted on.
+   * Empty records (messages.length === 0) are intentionally excluded.
    * Groups with no non-empty records are skipped entirely.
+   * Used only for local metadata operations (setActiveTab, newRecord, etc.).
    */
   _save() {
-    this._ownSaveCount++;
     const obj = {};
     for (const [origin, group] of this._groups) {
-      // Filter on live Conversation instances before serialising
       const liveRecords = group.records.filter(r => r.hasContent());
       if (liveRecords.length === 0) continue;
       const ser = {
@@ -50,7 +44,6 @@ export class ConversationStore {
         activeRecordId: group.activeRecordId,
         records:        liveRecords.map(r => r.serialize())
       };
-      // Fix activeRecordId if it pointed to a now-excluded empty record
       if (!ser.records.find(r => r.id === ser.activeRecordId)) {
         ser.activeRecordId = ser.records[ser.records.length - 1]?.id ?? null;
       }
@@ -59,36 +52,10 @@ export class ConversationStore {
     return chrome.storage.local.set({ [STORAGE_KEY]: obj });
   }
 
-  _debouncedSave() {
-    clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => this._save(), SAVE_DEBOUNCE_MS);
-  }
-
-  /**
-   * Returns true (and decrements counter) if the latest storage.onChanged
-   * event was caused by our own save — so the caller can skip reloading.
-   */
-  consumeOwnSave() {
-    if (this._ownSaveCount > 0) {
-      this._ownSaveCount--;
-      return true;
-    }
-    return false;
-  }
-
-  /** Public: schedule a debounced save (for pushing directly to a record object) */
-  requestSave() {
-    this._debouncedSave();
-  }
-
   // ── Tab lifecycle ───────────────────────────────────────────────────────────
 
   /**
    * Call when the active tab changes or navigates.
-   * - Non-http/https pages → { isDisabled: true }
-   * - Cleans up empty records in the target group first (they have no value)
-   * - Finds the most-recently-updated record whose URL matches (origin+path),
-   *   or creates a fresh empty record if none exists for this URL
    * Returns { isDisabled, isNewRecord, group }
    */
   setActiveTab(tabId, tabUrl, tabTitle) {
@@ -113,13 +80,11 @@ export class ConversationStore {
     }
     const group = this._groups.get(origin);
 
-    // Drop all records that were never used (empty message list).
-    // These are placeholder stubs from pages visited without chatting.
+    // Drop empty placeholder records
     const emptyIds = group.records.filter(r => r.isEmpty()).map(r => r.id);
     for (const id of emptyIds) group.deleteRecord(id);
 
-    // Find the most recently updated record whose pageUrl matches this URL
-    // (origin + pathname only — query params and hash are ignored for matching)
+    // Find most recently updated record matching this URL (origin+pathname)
     const key = pageKey(tabUrl);
     const match = group.records
       .filter(r => pageKey(r.pageUrl) === key)
@@ -130,87 +95,18 @@ export class ConversationStore {
       group.setActive(match.id);
       isNewRecord = false;
     } else {
-      // First visit to this URL — create a placeholder (saved only after first message)
       group.newRecord(tabUrl, tabTitle);
       isNewRecord = true;
     }
 
-    // Persist: _save() filters out the new empty record automatically,
-    // but we still call it so the cleanup of deleted empties reaches storage
-    // and the updated activeRecordId is persisted.
     this._save();
-
     return { isDisabled: false, isNewRecord, group };
   }
 
-  // ── Delegates to active record ─────────────────────────────────────────────
-
-  push(role, content) {
-    const rec = this.getActiveRecord();
-    if (rec) {
-      rec.push(role, content);
-      this._debouncedSave();
-    }
-  }
-
-  truncateTo(n) {
-    const rec = this.getActiveRecord();
-    if (!rec) return;
-    rec.truncateTo(n);
-    // Clear any pending slots whose insertion index is at or beyond the cut point
-    for (const [itemId, slot] of this._pendingSlots) {
-      if (slot.recordId === rec.id && slot.index >= n) {
-        this._pendingSlots.delete(itemId);
-      }
-    }
-    this._debouncedSave();
-  }
+  // ── Read-only accessors ─────────────────────────────────────────────────────
 
   getApiMessages() {
     return this.getActiveRecord()?.getApiMessages() ?? [];
-  }
-
-  // ── Queue write channel ────────────────────────────────────────────────────
-
-  /**
-   * Reserve insertion positions for an in-flight queue item.
-   * Called at send-time; nothing is written to messages yet.
-   */
-  reserveSlot(recordId, itemId) {
-    const rec = this._findRecord(recordId);
-    if (!rec) return;
-    // Each already-reserved slot for this record will eventually splice 2 messages
-    // (user + assistant). Offset by that amount so rapid successive sends land in
-    // the correct order even before any slot is filled.
-    const pendingPairs = [...this._pendingSlots.values()]
-      .filter(s => s.recordId === recordId).length;
-    this._pendingSlots.set(itemId, { recordId, index: rec.messages.length + pendingPairs * 2 });
-  }
-
-  /**
-   * Fill a reserved slot once the stream completes.
-   * Inserts user + assistant messages at the pre-reserved index to preserve order.
-   */
-  fillSlot(itemId, userText, assistantText) {
-    const slot = this._pendingSlots.get(itemId);
-    if (!slot) return;
-    const rec = this._findRecord(slot.recordId);
-    if (!rec) { this._pendingSlots.delete(itemId); return; }
-    const now = Date.now();
-    rec.messages.splice(slot.index, 0,
-      { role: "user",      content: userText,      timestamp: now },
-      { role: "assistant", content: assistantText, timestamp: now }
-    );
-    rec.updatedAt = now;
-    this._pendingSlots.delete(itemId);
-    this._debouncedSave();
-  }
-
-  /**
-   * Discard a reserved slot without writing (stream cancelled before completion).
-   */
-  cancelSlot(itemId) {
-    this._pendingSlots.delete(itemId);
   }
 
   // ── Record management ───────────────────────────────────────────────────────
@@ -267,22 +163,10 @@ export class ConversationStore {
     const group = this._groups.get(origin);
     if (group) { group.displayName = displayName; await this._save(); }
   }
-
-  // ── Private helpers ────────────────────────────────────────────────────────
-
-  _findRecord(recordId) {
-    for (const group of this._groups.values()) {
-      const rec = group.records.find(r => r.id === recordId);
-      if (rec) return rec;
-    }
-    return null;
-  }
 }
 
 /**
  * Normalise a URL to origin+pathname for record matching.
- * Query parameters and hash fragments are ignored so that
- * "https://a.com/page?q=1" and "https://a.com/page?q=2" share one record.
  */
 function pageKey(url) {
   try {

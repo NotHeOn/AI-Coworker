@@ -1,7 +1,8 @@
 import { ModelManager } from "./ModelManager.js";
 import { ProviderManager } from "./ProviderManager.js";
 import { PresetManager } from "./PresetManager.js";
-import { SystemPromptBuilder } from "./SystemPromptBuilder.js";
+import { ContextSystem } from "./ContextSystem.js";
+import { HistoryManager } from "./HistoryManager.js";
 import { ModelClientFactory } from "./ModelClientFactory.js";
 import { TabManager } from "./TabManager.js";
 import { RequestQueue } from "./RequestQueue.js";
@@ -13,10 +14,12 @@ export class ExtensionController {
     this._modelManager = new ModelManager();
     this._providerManager = new ProviderManager();
     this._presetManager = new PresetManager();
-    this._systemPromptBuilder = new SystemPromptBuilder();
+    this._contextSystem = new ContextSystem();
+    this._historyManager = new HistoryManager();
     this._tabManager = new TabManager();
     this._queue = new RequestQueue(this._runAnalyze.bind(this));
     this._selections = new Map(); // tabId → selected text
+    this._contentPromises = new Map(); // itemId → Promise<content>
   }
 
   init() {
@@ -86,6 +89,26 @@ export class ExtensionController {
       case "GET_PAGE_CONTENT":
         this._handleGetPageContent(message, sendResponse);
         break;
+      case "GET_CONTEXT":
+        this._handleGetContext(message, sendResponse);
+        break;
+      case "GET_SLOTS":
+        this._handleGetSlots(message, sendResponse);
+        break;
+      case "SET_SLOT":
+        this._handleSetSlot(message, sendResponse);
+        break;
+      case "SET_FINAL_CONTEXT":
+        this._contextSystem.setFinal(message.itemId, { systemPrompt: message.systemPrompt, messages: message.messages });
+        sendResponse({ ok: true });
+        break;
+      case "CLEAR_FINAL_CONTEXT":
+        this._contextSystem.clearFinal(message.itemId);
+        sendResponse({ ok: true });
+        break;
+      case "TRUNCATE_HISTORY":
+        this._handleTruncateHistory(message, sendResponse);
+        break;
       case "ABORT_STREAM":
         this._queue.cancel(
           message.tabId ?? this._tabManager.getActive()?.id,
@@ -134,7 +157,6 @@ export class ExtensionController {
   async _handleGetActiveProfile(sendResponse) {
     try {
       const active = await this._modelManager.getActive();
-      // Expose a flattened profile-like object for sidepanel compatibility
       sendResponse({ profile: active ? { ...active.profile, _provider: active.provider, _modelId: active.modelId } : null });
     } catch (e) {
       sendResponse({ error: e.message });
@@ -150,27 +172,57 @@ export class ExtensionController {
     }
   }
 
-  /** Enqueue an ANALYZE request — execution is handled by _runAnalyze via RequestQueue. */
-  _handleAnalyze({ tabId, instruction, history, syncPage, selectedText, recordId, itemId }, sendResponse) {
+  /** Enqueue an ANALYZE request — UI sends 5 lightweight fields, background derives the rest. */
+  async _handleAnalyze({ itemId, instruction, syncPage, tabId, recordId }, sendResponse) {
     sendResponse({ ok: true }); // Ack immediately; results come via broadcast messages
+
+    const resolvedItemId = itemId ?? `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    // 1. Derive history from storage using UI-snapshotted recordId
+    const history = recordId
+      ? await this._historyManager.getHistory(recordId)
+      : [];
+    const messageCount = history.length;
+
+    // 2. Derive selectedText from background's own tracking
+    const selectedText = tabId ? (this._selections.get(tabId) ?? "") : "";
+
+    // 3. Create context entry + set slots
+    this._contextSystem.createEntry(resolvedItemId, { history });
+    this._contextSystem.setSlot(resolvedItemId, "instruction", instruction);
+    if (selectedText) {
+      this._contextSystem.setSlot(resolvedItemId, "selected_text", selectedText);
+    }
+
+    // 4. Reserve history slot for ordered insertion
+    if (recordId) {
+      this._historyManager.reserveSlot(recordId, resolvedItemId, messageCount);
+    }
+
+    // 5. Start async page content fetch (non-blocking)
+    const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
+    const isFirstMessage = !history.length;
+    const shouldFetch = (isFirstMessage || syncPage) && tab;
+    this._contentPromises.set(resolvedItemId,
+      shouldFetch ? tab.getContent() : Promise.resolve(null)
+    );
+
+    // 6. Enqueue — queue item is now lightweight
     this._queue.enqueue({
-      itemId:       itemId ?? `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      itemId: resolvedItemId,
       tabId,
       instruction,
-      history:      history ?? [],
-      syncPage:     !!syncPage,
-      selectedText: selectedText ?? "",
-      recordId:     recordId ?? null
+      syncPage: !!syncPage,
+      recordId: recordId ?? null,
     });
   }
 
   /** Execute one queue item — called by RequestQueue._executeItem. */
   async _runAnalyze(item) {
-    const { itemId, tabId, instruction, history, syncPage, selectedText } = item;
-    const isFirstMessage = !(history?.length);
-    const shouldFetchContent = isFirstMessage || !!syncPage;
-    console.log(`[AI Coworker] ANALYZE start — tabId=${tabId ?? "none"}, history=${history?.length ?? 0} turns, syncPage=${!!syncPage}, shouldFetch=${shouldFetchContent}, instruction="${instruction.slice(0, 80)}"`);
+    const { itemId, tabId, instruction, recordId, syncPage } = item;
+    console.log(`[AI Coworker] ANALYZE start — tabId=${tabId ?? "none"}, itemId=${itemId}`);
 
+    // 1. Model configuration
     const active = await this._modelManager.getActive();
     if (!active) {
       console.warn("[AI Coworker] ANALYZE aborted — no active profile");
@@ -178,49 +230,57 @@ export class ExtensionController {
         type: "STREAM_ERROR", tabId, itemId,
         error: "No profile configured. Please open Settings to add a model profile."
       }).catch(() => {});
+      this._contextSystem.discard(itemId);
+      this._historyManager.cancelSlot(itemId);
+      this._contentPromises.delete(itemId);
       return;
     }
     const { profile, provider, modelId } = active;
     console.log(`[AI Coworker] ANALYZE using profile "${profile.name}" (${provider.baseUrl}, model=${modelId})`);
 
-    let contentData = null;
-    if (shouldFetchContent) {
-      const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
-      if (!tab) {
-        console.warn(`[AI Coworker] ANALYZE — no tab found for tabId=${tabId}`);
-      }
-      contentData = tab ? await tab.getContent() : null;
-      console.log(`[AI Coworker] ANALYZE content: hasContent=${!!(contentData?.markdown)}, chars=${contentData?.markdown?.length ?? 0}, anchors=${Object.keys(contentData?.anchorMap || {}).length}`);
-    } else {
-      console.log(`[AI Coworker] ANALYZE content: skipped (follow-up turn, syncPage=off)`);
+    // 2. Wait for page content → feed into slot
+    const content = await this._contentPromises.get(itemId);
+    this._contentPromises.delete(itemId);
+    if (content?.markdown) {
+      this._contextSystem.setSlot(itemId, "page_content", content.markdown);
     }
 
-    const hasContent = !!(contentData?.markdown);
+    // 3. Assemble context
+    let context;
+    try {
+      this._contextSystem.assemble(itemId);
+      context = this._contextSystem.getContext(itemId);
+    } catch (e) {
+      console.warn(`[AI Coworker] ANALYZE — context build failed: ${e.message}`);
+      chrome.runtime.sendMessage({ type: "STREAM_ERROR", tabId, itemId, error: e.message }).catch(() => {});
+      this._historyManager.cancelSlot(itemId);
+      return;
+    }
 
-    if (shouldFetchContent && !hasContent) {
-      const tab = tabId ? this._tabManager.get(tabId) : this._tabManager.getActive();
-      const reason = !tab
-        ? "No tab found"
-        : contentData?.title === "Restricted page"
+    const { systemPrompt, messages, _meta } = context;
+
+    // Enrich _meta with content details if available
+    if (_meta && content) {
+      _meta.anchorCount = Object.keys(content.anchorMap || {}).length;
+      _meta.url = content.url ?? "";
+      _meta.title = content.title ?? "";
+    }
+
+    // Check if content was expected but unavailable
+    const entry = this._contextSystem.getOriginal(itemId);
+    const origMeta = entry?._meta;
+    if (origMeta && !origMeta.hasContent && (syncPage || origMeta.instruction)) {
+      // Only warn if this was the first message or syncPage was on
+      const historyLen = messages.length - 1; // subtract the new user message
+      if (syncPage || historyLen === 0) {
+        const reason = content?.title === "Restricted page"
           ? "Restricted page"
           : "Could not read page — try reloading the tab";
-      console.warn(`[AI Coworker] ANALYZE content unavailable: ${reason}`);
-      chrome.runtime.sendMessage({ type: "CONTENT_UNAVAILABLE", tabId, reason }).catch(() => {});
+        console.warn(`[AI Coworker] ANALYZE content unavailable: ${reason}`);
+        chrome.runtime.sendMessage({ type: "CONTENT_UNAVAILABLE", tabId, reason }).catch(() => {});
+      }
     }
 
-    const systemPromptHasContent = hasContent || !isFirstMessage;
-    const systemPrompt = this._systemPromptBuilder.build(systemPromptHasContent);
-
-    const messages = [...(history || [])];
-    const selectionNote = selectedText
-      ? `\n\nSelected text from page:\n> ${selectedText}`
-      : "";
-    const userContent = hasContent
-      ? `Here is the current page content:\n\n---\n${contentData.markdown}\n---\n${selectionNote}\n\nMy instruction: ${instruction}`
-      : selectedText
-        ? `${selectionNote}\n\nMy instruction: ${instruction}`
-        : instruction;
-    messages.push({ role: "user", content: userContent });
     console.log(`[AI Coworker] ANALYZE sending ${messages.length} message(s) to API`);
 
     const abortController = item.abortController;
@@ -245,15 +305,69 @@ export class ExtensionController {
       }
     } finally {
       clearTimeout(timeoutId);
+      this._contextSystem.discard(itemId);
     }
 
     if (abortController.signal.aborted) {
       const reason = abortController.signal.reason === "timeout" ? "timeout" : "user";
       console.log(`[AI Coworker] ANALYZE aborted (${reason}) — partial ${fullText.length} chars`);
       chrome.runtime.sendMessage({ type: "STREAM_ABORTED", tabId, itemId, reason, partialText: fullText }).catch(() => {});
+
+      if (fullText && recordId) {
+        this._historyManager.fillSlot(itemId, instruction, fullText); // fire-and-forget
+      } else {
+        this._historyManager.cancelSlot(itemId);
+      }
     } else {
       console.log(`[AI Coworker] ANALYZE done — response ${fullText.length} chars`);
       chrome.runtime.sendMessage({ type: "STREAM_DONE", tabId, itemId, fullText }).catch(() => {});
+
+      if (recordId) {
+        this._historyManager.fillSlot(itemId, instruction, fullText); // fire-and-forget
+      }
+    }
+  }
+
+  _handleGetContext({ itemId }, sendResponse) {
+    try {
+      const original = this._contextSystem.getOriginal(itemId);
+      if (!original) { sendResponse({ error: "Context not found — item may have already executed" }); return; }
+      sendResponse({ ok: true, ...original });
+    } catch (e) {
+      sendResponse({ error: e.message });
+    }
+  }
+
+  _handleGetSlots({ itemId }, sendResponse) {
+    try {
+      const slots = this._contextSystem.getSlots(itemId);
+      sendResponse({ ok: true, slots });
+    } catch (e) {
+      sendResponse({ error: e.message });
+    }
+  }
+
+  _handleSetSlot({ itemId, name, content, enabled }, sendResponse) {
+    try {
+      if (content !== undefined) {
+        this._contextSystem.setSlot(itemId, name, content, { enabled });
+      } else if (enabled !== undefined) {
+        this._contextSystem.toggleSlot(itemId, name, enabled);
+      }
+      // Re-assemble after slot edit
+      this._contextSystem.assemble(itemId);
+      sendResponse({ ok: true });
+    } catch (e) {
+      sendResponse({ error: e.message });
+    }
+  }
+
+  async _handleTruncateHistory({ recordId, index }, sendResponse) {
+    try {
+      await this._historyManager.truncateRecord(recordId, index);
+      sendResponse({ ok: true });
+    } catch (e) {
+      sendResponse({ error: e.message });
     }
   }
 
@@ -263,7 +377,7 @@ export class ExtensionController {
       if (!tab) { sendResponse({ error: "Tab not found" }); return; }
       const content = await tab.getContent();
       const hasContent = !!(content?.markdown);
-      const systemPrompt = this._systemPromptBuilder.build(hasContent);
+      const systemPrompt = this._contextSystem.getDefaultSystemPrompt(hasContent);
       sendResponse({
         markdown: content?.markdown || null,
         anchorMap: content?.anchorMap || {},
