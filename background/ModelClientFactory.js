@@ -2,9 +2,17 @@ import { AnthropicClient } from "./AnthropicClient.js";
 import { OpenAIClient } from "./OpenAIClient.js";
 
 export class ModelClientFactory {
-  /** Returns the appropriate client based on the profile's baseUrl */
-  static create(profile) {
-    if (profile.baseUrl.includes("anthropic.com")) {
+  /**
+   * @param {{ provider: { type: string, baseUrl: string, apiKey: string }, modelId: string }} param
+   */
+  static create({ provider, modelId }) {
+    // Normalise to the flat shape the clients expect
+    const profile = {
+      baseUrl:   provider.baseUrl,
+      apiKey:    provider.apiKey,
+      modelName: modelId,
+    };
+    if (provider.type === "anthropic") {
       return new AnthropicClient(profile);
     }
     return new OpenAIClient(profile);
