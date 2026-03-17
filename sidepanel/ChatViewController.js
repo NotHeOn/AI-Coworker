@@ -29,12 +29,12 @@ export class ChatViewController {
 
   // ── Tab lifecycle ──────────────────────────────────────────────────────────
 
-  setActiveTab(tabId, tabUrl, tabTitle) {
+  async setActiveTab(tabId, tabUrl, tabTitle) {
     this._activeTabId    = tabId;
     this._activeTabUrl   = tabUrl ?? "";
     this._activeTabTitle = tabTitle ?? "";
 
-    const { isDisabled, group } = this._conversation.setActiveTab(tabId, tabUrl, tabTitle);
+    const { isDisabled, group } = await this._conversation.setActiveTab(tabId, tabUrl, tabTitle);
     this._ui.setHistoryDisabled(isDisabled);
 
     // If history view is open when tab switches, update it for the new origin
@@ -43,14 +43,14 @@ export class ChatViewController {
     }
   }
 
-  onTabChanged(tabInfo) {
+  async onTabChanged(tabInfo) {
     const newTabId = tabInfo.id;
     this._activeTabId    = newTabId;
     this._activeTabUrl   = tabInfo.url ?? "";
     this._activeTabTitle = tabInfo.title ?? "";
     this._ui.updateTabStatus(tabInfo);
 
-    this.setActiveTab(newTabId, tabInfo.url, tabInfo.title);
+    await this.setActiveTab(newTabId, tabInfo.url, tabInfo.title);
 
     this.renderCurrentRecord();
   }
@@ -152,10 +152,9 @@ export class ChatViewController {
   // ── External sync ──────────────────────────────────────────────────────────
 
   async onChatGroupsStorageChanged() {
-    await this._conversation.load();
-    // Re-set active tab to ensure the right record is selected after reload
+    // setActiveTab() reloads from storage internally — no need for a separate load() here
     if (this._activeTabId) {
-      this._conversation.setActiveTab(this._activeTabId, this._activeTabUrl, this._activeTabTitle);
+      await this._conversation.setActiveTab(this._activeTabId, this._activeTabUrl, this._activeTabTitle);
     }
 
     // Refresh the chat view to show updated messages
