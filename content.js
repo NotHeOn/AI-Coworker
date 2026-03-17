@@ -248,7 +248,11 @@ function scrollToElement(anchorId) {
 
   function notifyInvalidated() {
     console.log(`[AI Coworker] content.js CONTENT_INVALIDATED → ${window.location.href}`);
-    chrome.runtime.sendMessage({ type: "CONTENT_INVALIDATED" }).catch(() => {});
+    try {
+      chrome.runtime.sendMessage({ type: "CONTENT_INVALIDATED" }).catch(() => {});
+    } catch {
+      // Extension context invalidated — ignore
+    }
   }
 
   // Intercept History API pushes (React Router, Vue Router, etc.)
@@ -309,13 +313,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   let _lastSent = "";
   let _debounceTimer = null;
 
-  document.addEventListener("selectionchange", () => {
+  function onSelectionChange() {
     clearTimeout(_debounceTimer);
     _debounceTimer = setTimeout(() => {
       const text = window.getSelection().toString().trim();
       if (text === _lastSent) return;
       _lastSent = text;
-      chrome.runtime.sendMessage({ type: "SELECTION_CHANGED", text }).catch(() => {});
+      // chrome.runtime.sendMessage throws synchronously (not a rejected promise)
+      // when the extension context has been invalidated after a reload/update.
+      // Catch it and remove the listener so the error doesn't keep firing.
+      try {
+        chrome.runtime.sendMessage({ type: "SELECTION_CHANGED", text }).catch(() => {});
+      } catch {
+        document.removeEventListener("selectionchange", onSelectionChange);
+      }
     }, 400);
-  });
+  }
+
+  document.addEventListener("selectionchange", onSelectionChange);
 })();

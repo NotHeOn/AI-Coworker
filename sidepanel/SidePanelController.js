@@ -20,9 +20,6 @@ export class SidePanelController {
   }
 
   async init() {
-    // Load persistent history first
-    await this._conversation.load();
-
     // Fetch initial state in parallel
     const [tabInfo, presetsRes, profileRes] = await Promise.all([
       chrome.runtime.sendMessage({ type: "GET_ACTIVE_TAB" }),
@@ -30,10 +27,10 @@ export class SidePanelController {
       chrome.runtime.sendMessage({ type: "GET_ACTIVE_PROFILE" })
     ]);
 
-    // Apply tab info and seed conversation manager
+    // Apply tab info — setActiveTab loads from storage internally
     if (tabInfo && !tabInfo.error) {
       this._ui.updateTabStatus(tabInfo);
-      this._chatView.setActiveTab(tabInfo.id, tabInfo.url, tabInfo.title);
+      await this._chatView.setActiveTab(tabInfo.id, tabInfo.url, tabInfo.title);
     }
 
     // Restore queue state in case the sidepanel was rebuilt while items were queued
@@ -217,8 +214,12 @@ export class SidePanelController {
         recordId: sendRecord.id,
         index: domIndex,
       });
-      await this._conversation.load();
-      this._conversation.setActiveTab(this._chatView.activeTabId, this._chatView.activeTabUrl, this._chatView.activeTabTitle);
+      // setActiveTab reloads from storage internally (picks up truncated state)
+      await this._conversation.setActiveTab(
+        this._chatView.activeTabId,
+        this._chatView.activeTabUrl,
+        this._chatView.activeTabTitle
+      );
     }
 
     this._ui.instructionEl.value = newText;

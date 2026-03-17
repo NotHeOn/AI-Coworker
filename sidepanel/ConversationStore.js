@@ -57,9 +57,14 @@ export class ConversationStore {
 
   /**
    * Call when the active tab changes or navigates.
+   * Always reloads from storage first to pick up any messages written by
+   * HistoryStore.fillSlot() since the last load (prevents stale-write data loss).
    * Returns { isDisabled, isNewRecord, group }
    */
-  setActiveTab(tabId, tabUrl, tabTitle) {
+  async setActiveTab(tabId, tabUrl, tabTitle) {
+    // Always get fresh data — HistoryStore may have written new records since last load
+    await this.load();
+
     const pu = new PageUrl(tabUrl);
     if (!pu.isHttp) {
       this._activeOrigin = null;
@@ -93,8 +98,21 @@ export class ConversationStore {
       isNewRecord = true;
     }
 
-    this._save();
+    // Targeted save: only update activeRecordId — never overwrite messages owned by HistoryStore
+    await this._saveActiveMeta(origin, group.activeRecordId);
     return { isDisabled: false, isNewRecord, group };
+  }
+
+  /**
+   * Persist only the activeRecordId for one origin using a read-modify-write.
+   * This avoids clobbering message data that HistoryStore may have written concurrently.
+   */
+  async _saveActiveMeta(origin, activeRecordId) {
+    const data = await chrome.storage.local.get(STORAGE_KEY);
+    const stored = data[STORAGE_KEY] ?? {};
+    if (!stored[origin]) return; // Origin not in storage yet — HistoryStore creates it on first message
+    stored[origin].activeRecordId = activeRecordId;
+    await chrome.storage.local.set({ [STORAGE_KEY]: stored });
   }
 
   // ── Read-only accessors ─────────────────────────────────────────────────────
