@@ -13,8 +13,8 @@ export class AnalyzePreparer {
     this._selections = new Map(); // tabId → selected text
   }
 
-  /** Enqueue an ANALYZE request — UI sends 5 lightweight fields, background derives the rest. */
-  async prepare({ itemId, instruction, syncPage, tabId, recordId }, sendResponse) {
+  /** Enqueue an ANALYZE request — UI sends lightweight fields, background derives the rest. */
+  async prepare({ itemId, instruction, syncPage, tabId, recordId, pageUrl, pageTitle, recordTitle }, sendResponse) {
     sendResponse({ ok: true }); // Ack immediately; results come via broadcast messages
 
     const resolvedItemId = itemId ?? `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -37,7 +37,7 @@ export class AnalyzePreparer {
 
     // 4. Reserve history slot for ordered insertion
     if (recordId) {
-      this._historyStore.reserveSlot(recordId, resolvedItemId, messageCount);
+      this._historyStore.reserveSlot(recordId, resolvedItemId, messageCount, { pageUrl, pageTitle, recordTitle });
     }
 
     // 5. Start async page content fetch (non-blocking)

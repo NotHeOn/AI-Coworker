@@ -35,13 +35,16 @@ export class HistoryStore {
    * @param {string} recordId
    * @param {string} itemId
    * @param {number} messageCount — current message count (from getHistory().length)
+   * @param {object} [recordMeta] — { pageUrl, pageTitle, recordTitle } needed to create the
+   *   record in storage if it doesn't exist yet (first message in a new conversation).
    */
-  reserveSlot(recordId, itemId, messageCount) {
+  reserveSlot(recordId, itemId, messageCount, recordMeta = null) {
     const pendingPairs = [...this._pendingSlots.values()]
       .filter(s => s.recordId === recordId).length;
     this._pendingSlots.set(itemId, {
       recordId,
       index: messageCount + pendingPairs * 2,
+      recordMeta,
     });
   }
 
@@ -56,7 +59,33 @@ export class HistoryStore {
 
     const data = await chrome.storage.local.get(STORAGE_KEY);
     const groups = data[STORAGE_KEY] ?? {};
-    const record = this._findRecord(groups, slot.recordId);
+    let record = this._findRecord(groups, slot.recordId);
+
+    // First message: the record was never written to storage (empty records are filtered).
+    // Recreate it now so the conversation is persisted.
+    if (!record && slot.recordMeta?.pageUrl) {
+      const { pageUrl, pageTitle, recordTitle } = slot.recordMeta;
+      let origin, hostname;
+      try { const u = new URL(pageUrl); origin = u.origin; hostname = u.hostname; }
+      catch { origin = pageUrl; hostname = pageUrl; }
+
+      if (!groups[origin]) {
+        groups[origin] = { origin, displayName: hostname, records: [], activeRecordId: null };
+      }
+      const now0 = Date.now();
+      record = {
+        id:        slot.recordId,
+        title:     recordTitle || pageTitle || "",
+        pageUrl,
+        pageTitle: pageTitle ?? "",
+        messages:  [],
+        createdAt: now0,
+        updatedAt: now0,
+      };
+      groups[origin].records.push(record);
+      groups[origin].activeRecordId = slot.recordId;
+    }
+
     if (!record) return;
 
     const now = Date.now();

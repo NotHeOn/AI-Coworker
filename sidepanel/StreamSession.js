@@ -105,14 +105,17 @@ export class StreamSession {
 
     chrome.runtime.onMessage.addListener(onStream);
 
-    // Send 5 lightweight fields — background derives history + selectedText
+    // Send lightweight fields — background derives history + selectedText
     chrome.runtime.sendMessage({
       type: "ANALYZE",
       itemId,
       instruction,
       syncPage,
       tabId: sendTabId,
-      recordId: sendRecord?.id ?? null,
+      recordId:    sendRecord?.id ?? null,
+      pageUrl:     sendRecord?.pageUrl ?? "",
+      pageTitle:   sendRecord?.pageTitle ?? "",
+      recordTitle: sendRecord?.title ?? "",
     });
   }
 
@@ -127,20 +130,6 @@ export class StreamSession {
   }
 
   // ── Preview ────────────────────────────────────────────────────────────────
-
-  sendWithPreview(tabId) {
-    const instruction = this._ui.instructionEl.value.trim();
-    if (instruction) {
-      // Has input — enqueue and open editable context preview
-      const itemId = `qi_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const url = chrome.runtime.getURL("context-editor.html") + `?itemId=${encodeURIComponent(itemId)}`;
-      chrome.tabs.create({ url });
-      this.send(tabId, itemId);
-    } else {
-      // No input — just show current page content (read-only)
-      this.openContentPreview(tabId);
-    }
-  }
 
   openContentPreview(tabId) {
     const url = chrome.runtime.getURL("preview.html") + (tabId ? `?tabId=${tabId}` : "");
