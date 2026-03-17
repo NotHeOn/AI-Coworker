@@ -1,4 +1,5 @@
 import { SiteHistory } from "./SiteHistory.js";
+import { PageUrl } from "./PageUrl.js";
 
 const STORAGE_KEY = "chatGroups";
 
@@ -59,19 +60,13 @@ export class ConversationStore {
    * Returns { isDisabled, isNewRecord, group }
    */
   setActiveTab(tabId, tabUrl, tabTitle) {
-    let origin;
-    try {
-      const u = new URL(tabUrl ?? "");
-      if (u.protocol !== "http:" && u.protocol !== "https:") {
-        this._activeOrigin = null;
-        return { isDisabled: true, isNewRecord: false, group: null };
-      }
-      origin = u.origin;
-    } catch {
+    const pu = new PageUrl(tabUrl);
+    if (!pu.isHttp) {
       this._activeOrigin = null;
       return { isDisabled: true, isNewRecord: false, group: null };
     }
 
+    const origin = pu.origin;
     this._tabOriginMap.set(tabId, origin);
     this._activeOrigin = origin;
 
@@ -85,9 +80,8 @@ export class ConversationStore {
     for (const id of emptyIds) group.deleteRecord(id);
 
     // Find most recently updated record matching this URL (origin+pathname)
-    const key = pageKey(tabUrl);
     const match = group.records
-      .filter(r => pageKey(r.pageUrl) === key)
+      .filter(r => pu.matches(r.pageUrl))
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 
     let isNewRecord;
@@ -165,14 +159,3 @@ export class ConversationStore {
   }
 }
 
-/**
- * Normalise a URL to origin+pathname for record matching.
- */
-function pageKey(url) {
-  try {
-    const u = new URL(url);
-    return u.origin + u.pathname;
-  } catch {
-    return url;
-  }
-}

@@ -1,3 +1,5 @@
+import { PageUrl } from "./PageUrl.js";
+
 /**
  * ChatViewController — manages the chat view lifecycle.
  *
@@ -60,7 +62,7 @@ export class ChatViewController {
     const rec = group?.records.find(r => r.id === recordId);
 
     // If the record belongs to a different URL, ask the user what to do
-    if (rec?.pageUrl && this._activeTabUrl && !_pageKeysMatch(rec.pageUrl, this._activeTabUrl)) {
+    if (rec?.pageUrl && this._activeTabUrl && !new PageUrl(rec.pageUrl).matches(this._activeTabUrl)) {
       this._ui.showUrlMismatchDialog(
         rec,
         this._activeTabUrl,
@@ -173,11 +175,3 @@ export class ChatViewController {
   }
 }
 
-/** Compare two URLs by origin+pathname only (ignoring query/hash) */
-function _pageKeysMatch(urlA, urlB) {
-  const key = (url) => {
-    try { const u = new URL(url); return u.origin + u.pathname; }
-    catch { return url; }
-  };
-  return key(urlA) === key(urlB);
-}

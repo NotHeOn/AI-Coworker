@@ -8,8 +8,7 @@
  *   createEntry(itemId, { history })
  *   setSlot(itemId, name, content, opts?)   — called 0-N times
  *   assemble(itemId)                        — builds messages array
- *   getContext(itemId)                       — returns final ?? original
- *   setFinal / clearFinal                   — preview edits
+ *   getContext(itemId)                       — returns assembled context
  *   discard(itemId)                         — cleanup
  */
 export class ContextSystem {
@@ -44,15 +43,13 @@ export class ContextSystem {
   /**
    * Create a new context entry for a queue item.
    * @param {string} itemId
-   * @param {{ history: Array, systemPromptOverride?: string }} opts
+   * @param {{ history: Array }} opts
    */
-  createEntry(itemId, { history, systemPromptOverride } = {}) {
+  createEntry(itemId, { history } = {}) {
     this._entries.set(itemId, {
       history: history ?? [],
-      systemPromptOverride: systemPromptOverride ?? null,
       slots: new Map(),
       original: null,
-      final: null,
     });
   }
 
@@ -80,24 +77,6 @@ export class ContextSystem {
       order: order ?? defaults.order,
       wrapper: wrapper !== undefined ? wrapper : defaults.wrapper,
     });
-  }
-
-  removeSlot(itemId, name) {
-    const entry = this._entries.get(itemId);
-    if (entry) entry.slots.delete(name);
-  }
-
-  toggleSlot(itemId, name, enabled) {
-    const entry = this._entries.get(itemId);
-    if (!entry) return;
-    const slot = entry.slots.get(name);
-    if (slot) slot.enabled = enabled;
-  }
-
-  getSlots(itemId) {
-    const entry = this._entries.get(itemId);
-    if (!entry) return [];
-    return [...entry.slots.values()].sort((a, b) => a.order - b.order);
   }
 
   // ── Assembly ───────────────────────────────────────────────────────────────
@@ -136,8 +115,7 @@ export class ContextSystem {
     // For follow-up messages, keep the "has content" system prompt even though
     // we're not re-sending the page — the model already has it from turn 1.
     const isFollowUp = entry.history.length > 0;
-    const systemPrompt = entry.systemPromptOverride
-      ?? this.getDefaultSystemPrompt(hasContent || isFollowUp);
+    const systemPrompt = this.getDefaultSystemPrompt(hasContent || isFollowUp);
 
     const messages = [...entry.history, { role: "user", content: userContent }];
 
@@ -162,30 +140,17 @@ export class ContextSystem {
 
   // ── Context retrieval ──────────────────────────────────────────────────────
 
-  /** Returns final context if user edited, otherwise the assembled original. */
   getContext(itemId) {
     const entry = this._entries.get(itemId);
     if (!entry) throw new Error(`ContextSystem: no entry for itemId=${itemId}`);
-    return entry.final ?? entry.original;
+    return entry.original;
   }
 
-  /** Returns the auto-assembled original context (for preview). */
+  /** Returns the assembled original context (used by StreamRunner for CONTENT_UNAVAILABLE check). */
   getOriginal(itemId) {
     const entry = this._entries.get(itemId);
     if (!entry) return null;
     return entry.original;
-  }
-
-  // ── Preview edits ──────────────────────────────────────────────────────────
-
-  setFinal(itemId, { systemPrompt, messages }) {
-    const entry = this._entries.get(itemId);
-    if (entry) entry.final = { systemPrompt, messages };
-  }
-
-  clearFinal(itemId) {
-    const entry = this._entries.get(itemId);
-    if (entry) entry.final = null;
   }
 
   // ── Cleanup ────────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
 import { Conversation } from "./Conversation.js";
+import { PageUrl } from "./PageUrl.js";
 
 export class SiteHistory {
   constructor({ origin, displayName, records = [], activeRecordId = null } = {}) {
     this.origin        = origin;
-    this.displayName   = displayName ?? (() => { try { return new URL(origin).hostname; } catch { return origin; } })();
+    this.displayName   = displayName ?? new PageUrl(origin).hostname;
     this.records       = records.map(r => r instanceof Conversation ? r : Conversation.deserialize(r));
     this.activeRecordId = activeRecordId ?? (this.records[this.records.length - 1]?.id ?? null);
   }

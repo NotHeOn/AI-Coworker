@@ -1,4 +1,5 @@
 import { CitationRenderer } from "./CitationRenderer.js";
+import { PageUrl } from "./PageUrl.js";
 
 export class SidePanelUI {
   constructor() {
@@ -9,7 +10,6 @@ export class SidePanelUI {
     this._bindLinkInterception();
     this.instructionEl   = document.getElementById("instruction");
     this.sendBtn         = document.getElementById("sendBtn");
-    this.previewBtn      = document.getElementById("previewBtn");
     this.clearBtn        = document.getElementById("clearBtn");
     this.settingsBtn     = document.getElementById("settingsBtn");
     this.contextTextEl   = document.getElementById("contextText");
@@ -140,8 +140,8 @@ export class SidePanelUI {
   showUrlMismatchDialog(rec, currentUrl, onNew, onLoad) {
     document.getElementById("urlMismatchDialog")?.remove();
 
-    const recLabel  = _urlLabel(rec.pageUrl);
-    const curLabel  = _urlLabel(currentUrl);
+    const recLabel  = shorten(new PageUrl(rec.pageUrl).label, 50);
+    const curLabel  = shorten(new PageUrl(currentUrl).label, 50);
 
     const overlay = document.createElement("div");
     overlay.id = "urlMismatchDialog";
@@ -577,14 +577,7 @@ export class SidePanelUI {
   showLinkConfirmDialog(url, onConfirm) {
     document.getElementById("linkConfirmDialog")?.remove();
 
-    let displayUrl;
-    try {
-      const u = new URL(url);
-      displayUrl = u.hostname + (u.pathname.length > 1 ? u.pathname : "") + (u.search || "");
-    } catch {
-      displayUrl = url;
-    }
-    if (displayUrl.length > 60) displayUrl = displayUrl.slice(0, 59) + "…";
+    const displayUrl = shorten(new PageUrl(url).display, 60);
 
     const overlay = document.createElement("div");
     overlay.id = "linkConfirmDialog";
@@ -639,17 +632,6 @@ function shorten(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
 }
 
-/** Show hostname + pathname, truncated for display */
-function _urlLabel(url) {
-  try {
-    const u = new URL(url);
-    const path = u.pathname.length > 1 ? u.pathname : "";
-    const full = u.hostname + path;
-    return full.length > 50 ? full.slice(0, 49) + "…" : full;
-  } catch {
-    return url.length > 50 ? url.slice(0, 49) + "…" : url;
-  }
-}
 
 function relativeDate(ts) {
   const diff = Date.now() - ts;

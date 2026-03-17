@@ -69,7 +69,8 @@
       margin-bottom: 12px;
     }
 
-    /* ── Profile list ── */
+    /* ── Cards ── */
+    .provider-list,
     .profile-list { display: flex; flex-direction: column; gap: 10px; }
 
     .profile-card {
@@ -95,6 +96,29 @@
       border: 1px solid rgba(124,106,255,0.35);
       padding: 2px 7px;
       border-radius: 10px;
+    }
+
+    /* Provider type badge */
+    .type-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+    .type-anthropic {
+      background: rgba(210,140,90,0.18);
+      color: #e8a060;
+      border: 1px solid rgba(210,140,90,0.35);
+    }
+    .type-openai {
+      background: rgba(74,222,128,0.15);
+      color: #4ade80;
+      border: 1px solid rgba(74,222,128,0.3);
+    }
+
+    .provider-usage {
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
     .profile-meta {
@@ -160,6 +184,7 @@
     input[type="password"],
     input[type="text"],
     input[type="url"],
+    select,
     textarea {
       width: 100%;
       background: var(--surface2);
@@ -172,8 +197,10 @@
       outline: none;
       transition: border-color 0.15s;
     }
+    select { appearance: none; cursor: pointer; }
+    select option { background: var(--surface2); }
     textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
-    input:focus, textarea:focus { border-color: var(--accent); }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
     .input-row { display: flex; gap: 8px; }
     .input-row input { flex: 1; }
@@ -192,9 +219,10 @@
     }
     .toggle-visibility:hover { background: var(--border); }
 
-    /* Provider preset buttons */
+    /* Preset buttons */
     .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-    .preset-btn {
+    .preset-btn,
+    .provider-preset-btn {
       padding: 5px 11px;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -205,7 +233,8 @@
       cursor: pointer;
       transition: all 0.15s;
     }
-    .preset-btn:hover {
+    .preset-btn:hover,
+    .provider-preset-btn:hover {
       background: rgba(124,106,255,0.12);
       border-color: rgba(124,106,255,0.4);
       color: var(--accent);
@@ -401,55 +430,103 @@
       <h1>AI Coworker — Settings</h1>
     </div>
 
+    <!-- ── Providers section ── -->
+    <div class="section-title">AI Providers</div>
+    <div class="layout">
+      <!-- Left: provider list -->
+      <div>
+        <div class="panel-title">Saved Providers</div>
+        <div class="provider-list" id="providerList"></div>
+      </div>
+
+      <!-- Right: add/edit form -->
+      <div>
+        <div class="panel-title" id="providerFormTitle">Add Provider</div>
+        <div class="form-card">
+          <div class="presets">
+            <button class="provider-preset-btn" data-prov-preset="claude">Anthropic</button>
+            <button class="provider-preset-btn" data-prov-preset="openai">OpenAI</button>
+            <button class="provider-preset-btn" data-prov-preset="ollama">Ollama</button>
+          </div>
+
+          <div class="field">
+            <label for="providerName">Provider Name</label>
+            <input type="text" id="providerName" placeholder="e.g. Anthropic" />
+          </div>
+
+          <div class="field">
+            <label for="providerType">Type</label>
+            <select id="providerType">
+              <option value="anthropic">anthropic</option>
+              <option value="openai">openai</option>
+            </select>
+            <p class="helper">Use <strong>anthropic</strong> for Claude API; <strong>openai</strong> for OpenAI-compatible endpoints.</p>
+          </div>
+
+          <div class="field">
+            <label for="providerBaseUrl">Base URL</label>
+            <input type="url" id="providerBaseUrl" placeholder="https://api.anthropic.com/v1" />
+            <p class="helper">API base URL — no trailing slash.</p>
+          </div>
+
+          <div class="field">
+            <label for="providerApiKey">API Key</label>
+            <div class="input-row">
+              <input type="password" id="providerApiKey" placeholder="sk-…" autocomplete="off" />
+              <button class="toggle-visibility" id="providerToggleVisibility">Show</button>
+            </div>
+            <p class="helper">Leave blank for local models that don't require authentication.</p>
+          </div>
+
+          <input type="hidden" id="providerEditingId" value="" />
+
+          <button class="btn-primary" id="providerSaveBtn">Save Provider</button>
+          <button class="btn-secondary" id="providerCancelBtn" style="display:none">Cancel Edit</button>
+          <div class="status" id="providerStatus"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Profiles section ── -->
     <div class="section-title">Model Profiles</div>
     <div class="layout">
-      <!-- Left: Profiles list -->
+      <!-- Left: profile list -->
       <div>
         <div class="panel-title">Saved Profiles</div>
         <div class="profile-list" id="profileList"></div>
       </div>
 
-      <!-- Right: Add/Edit form -->
+      <!-- Right: add/edit form -->
       <div>
-        <div class="panel-title" id="formPanelTitle">Add Profile</div>
+        <div class="panel-title" id="profileFormTitle">Add Profile</div>
         <div class="form-card">
-          <div class="presets">
-            <button class="preset-btn" data-preset="claude">Claude</button>
-            <button class="preset-btn" data-preset="openai">OpenAI</button>
-            <button class="preset-btn" data-preset="ollama">Ollama (local)</button>
-          </div>
-
           <div class="field">
             <label for="profileName">Profile Name</label>
             <input type="text" id="profileName" placeholder="e.g. Claude Opus" />
           </div>
 
           <div class="field">
-            <label for="baseUrl">Base URL</label>
-            <input type="url" id="baseUrl" placeholder="https://api.anthropic.com/v1" />
-            <p class="helper">The API base URL (without trailing slash).</p>
+            <label for="profileProvider">Provider</label>
+            <select id="profileProvider">
+              <option value="">— select a provider —</option>
+            </select>
           </div>
 
           <div class="field">
-            <label for="modelName">Model Name</label>
-            <input type="text" id="modelName" placeholder="e.g. claude-opus-4-6" />
-          </div>
-
-          <div class="field">
-            <label for="apiKey">API Key</label>
+            <label for="profileModelId">Model ID</label>
             <div class="input-row">
-              <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" />
-              <button class="toggle-visibility" id="toggleVisibility">Show</button>
+              <input type="text" id="profileModelId" list="modelSuggestions" placeholder="e.g. claude-opus-4-6" autocomplete="off" />
+              <button class="toggle-visibility" id="fetchModelsBtn" disabled>Fetch</button>
             </div>
-            <p class="helper">Leave blank for local models that don't require authentication.</p>
+            <datalist id="modelSuggestions"></datalist>
+            <p class="helper" id="fetchModelsHelper">Select a provider, then click Fetch to load available models.</p>
           </div>
 
-          <input type="hidden" id="editingId" value="" />
+          <input type="hidden" id="profileEditingId" value="" />
 
-          <button class="btn-primary" id="saveBtn">Save &amp; Activate Profile</button>
-          <button class="btn-secondary" id="cancelEditBtn" style="display:none">Cancel Edit</button>
-          <div class="status" id="status"></div>
+          <button class="btn-primary" id="profileSaveBtn">Save &amp; Activate Profile</button>
+          <button class="btn-secondary" id="profileCancelBtn" style="display:none">Cancel Edit</button>
+          <div class="status" id="profileStatus"></div>
         </div>
       </div>
     </div>
@@ -457,13 +534,13 @@
     <!-- ── Presets section ── -->
     <div class="section-title">Quick Prompt Presets</div>
     <div class="layout">
-      <!-- Left: Preset list -->
+      <!-- Left: preset list -->
       <div>
         <div class="panel-title">Saved Presets</div>
         <div class="preset-list" id="presetList"></div>
       </div>
 
-      <!-- Right: Add/Edit preset form -->
+      <!-- Right: add/edit preset form -->
       <div>
         <div class="panel-title">Add / Edit Preset</div>
         <div class="form-card">
@@ -486,6 +563,7 @@
         </div>
       </div>
     </div>
+
     <!-- ── Chat History section ── -->
     <div class="section-title">Chat History</div>
     <div id="chatHistorySection">

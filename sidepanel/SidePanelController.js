@@ -84,8 +84,6 @@ export class SidePanelController {
       }
     });
 
-    ui.previewBtn.addEventListener("click", () => this._session.sendWithPreview(this._chatView.activeTabId));
-
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this._queueMirror.isRunning()) {
         this._session.abortCurrentStream(this._chatView.activeTabId);

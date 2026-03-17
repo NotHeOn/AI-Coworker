@@ -89,6 +89,9 @@ export class MessageRouter {
       case "GET_PROVIDERS":
         this._handleGetProviders(sendResponse);
         break;
+      case "FETCH_MODELS":
+        this._handleFetchModels(message, sendResponse);
+        break;
       case "ANALYZE":
         this._preparer.prepare(message, sendResponse);
         break;
@@ -105,23 +108,6 @@ export class MessageRouter {
         break;
       case "GET_PAGE_CONTENT":
         this._handleGetPageContent(message, sendResponse);
-        break;
-      case "GET_CONTEXT":
-        this._handleGetContext(message, sendResponse);
-        break;
-      case "GET_SLOTS":
-        this._handleGetSlots(message, sendResponse);
-        break;
-      case "SET_SLOT":
-        this._handleSetSlot(message, sendResponse);
-        break;
-      case "SET_FINAL_CONTEXT":
-        this._contextSystem.setFinal(message.itemId, { systemPrompt: message.systemPrompt, messages: message.messages });
-        sendResponse({ ok: true });
-        break;
-      case "CLEAR_FINAL_CONTEXT":
-        this._contextSystem.clearFinal(message.itemId);
-        sendResponse({ ok: true });
         break;
       case "TRUNCATE_HISTORY":
         this._handleTruncateHistory(message, sendResponse);
@@ -189,35 +175,14 @@ export class MessageRouter {
     }
   }
 
-  _handleGetContext({ itemId }, sendResponse) {
+  async _handleFetchModels({ providerId }, sendResponse) {
     try {
-      const original = this._contextSystem.getOriginal(itemId);
-      if (!original) { sendResponse({ error: "Context not found — item may have already executed" }); return; }
-      sendResponse({ ok: true, ...original });
-    } catch (e) {
-      sendResponse({ error: e.message });
-    }
-  }
-
-  _handleGetSlots({ itemId }, sendResponse) {
-    try {
-      const slots = this._contextSystem.getSlots(itemId);
-      sendResponse({ ok: true, slots });
-    } catch (e) {
-      sendResponse({ error: e.message });
-    }
-  }
-
-  _handleSetSlot({ itemId, name, content, enabled }, sendResponse) {
-    try {
-      if (content !== undefined) {
-        this._contextSystem.setSlot(itemId, name, content, { enabled });
-      } else if (enabled !== undefined) {
-        this._contextSystem.toggleSlot(itemId, name, enabled);
-      }
-      // Re-assemble after slot edit
-      this._contextSystem.assemble(itemId);
-      sendResponse({ ok: true });
+      const providers = await this._providerStore.getAll();
+      const provider = providers.find(p => p.id === providerId);
+      if (!provider) { sendResponse({ error: "Provider not found" }); return; }
+      const models = await this._providerStore.fetchModels(provider);
+      await this._providerStore.cacheModels(providerId, models);
+      sendResponse({ models });
     } catch (e) {
       sendResponse({ error: e.message });
     }
